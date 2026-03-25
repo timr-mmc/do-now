@@ -187,14 +187,14 @@ This expansion adds **84 new question banks** and **200+ sample questions** cove
 ## Loading Instructions
 
 ### Method 1: Using Supabase Dashboard (Recommended)
-1. Go to https://qdmbypxpwkqnggwqeldd.supabase.co
+1. Go to your Supabase project dashboard
 2. Navigate to SQL Editor
 3. Copy contents of `nz-year9-10-curriculum-expansion.sql`
 4. Paste and run the SQL
 
 ### Method 2: Using psql Command Line
 ```bash
-psql -h db.qdmbypxpwkqnggwqeldd.supabase.co -U postgres -d postgres -f nz-year9-10-curriculum-expansion.sql
+psql -h db.<your-project-ref>.supabase.co -U postgres -d postgres -f nz-year9-10-curriculum-expansion.sql
 ```
 
 ### Method 3: Using Supabase CLI
