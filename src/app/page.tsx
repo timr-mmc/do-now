@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -45,7 +45,7 @@ const MATH_STRANDS = ['Number', 'Algebra', 'Measurement', 'Geometry', 'Statistic
 
 export default function Home() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [user, setUser] = useState<any>(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [banks, setBanks] = useState<QuestionBank[]>([])
@@ -59,6 +59,7 @@ export default function Home() {
     { slotNumber: 6, category: null, topic: null, subtopic: null, bankId: null, question: null },
   ])
   const [loading, setLoading] = useState(true)
+  const [loadingBankIds, setLoadingBankIds] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0) // For forcing re-render of random questions
@@ -87,26 +88,20 @@ export default function Home() {
       .order('topic', { ascending: true })
 
     if (banksError) console.error('Error loading banks:', banksError)
-
-    if (banksData) {
-      setBanks(banksData)
-      
-      const { data: questionsData, error: questionsError } = await supabase
-        .from('questions')
-        .select('*')
-      
-      if (questionsError) console.error('Error loading questions:', questionsError)
-      
-      if (questionsData) {
-        const grouped = questionsData.reduce((acc, q) => {
-          if (!acc[q.bank_id]) acc[q.bank_id] = []
-          acc[q.bank_id].push(q)
-          return acc
-        }, {} as Record<string, Question[]>)
-        setAllQuestions(grouped)
-      }
-    }
+    if (banksData) setBanks(banksData)
     setLoading(false)
+  }
+
+  async function loadQuestionsForBank(bankId: string) {
+    if (allQuestions[bankId] !== undefined) return // Already cached
+    setLoadingBankIds(prev => [...prev, bankId])
+    const { data, error } = await supabase
+      .from('questions')
+      .select('id, question_text, answer, bank_id, diagram_data')
+      .eq('bank_id', bankId)
+    if (error) console.error('Error loading questions for bank:', error)
+    setAllQuestions(prev => ({ ...prev, [bankId]: data || [] }))
+    setLoadingBankIds(prev => prev.filter(id => id !== bankId))
   }
 
   function updateSlot(slotNumber: number, updates: Partial<QuestionSlot>) {
@@ -155,7 +150,7 @@ export default function Home() {
 
     // Create anonymous session (no profile_id)
     const { data: session, error: sessionError } = await supabase
-      .from('do_now_sessions')
+      .from('sessions')
       .insert({
         profile_id: null, // Anonymous session
         title: 'Do-Now Session',
@@ -362,11 +357,14 @@ export default function Home() {
                             {getSubtopics(slot.category, slot.topic).map((bank) => (
                               <button
                                 key={bank.id}
-                                onClick={() => updateSlot(slot.slotNumber, {
-                                  subtopic: bank.subtopic,
-                                  bankId: bank.id,
-                                  question: null,
-                                })}
+                                onClick={() => {
+                                  updateSlot(slot.slotNumber, {
+                                    subtopic: bank.subtopic,
+                                    bankId: bank.id,
+                                    question: null,
+                                  })
+                                  loadQuestionsForBank(bank.id)
+                                }}
                                 className={`rounded-full border-2 ${categoryStyle!.border} ${categoryStyle!.bg} ${categoryStyle!.hover} px-2 py-1 text-xs font-medium ${categoryStyle!.text} transition-all`}
                               >
                                 {bank.subtopic}
@@ -399,28 +397,37 @@ export default function Home() {
                               </button>
                             )}
                           </div>
-                          <p className="mb-2 text-xs font-medium text-gray-600">Select Question:</p>
-                          <div className="space-y-2" key={`questions-${slot.bankId}-${refreshKey}`}>
-                            {getQuestionsForBank(slot.bankId).length > 0 ? (
-                              getRandomQuestions(slot.bankId, 4).map((q) => (
-                                <button
-                                  key={q.id}
-                                  onClick={() => updateSlot(slot.slotNumber, { question: q })}
-                                  className="w-full rounded-lg border border-gray-200 bg-white p-2 text-left transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-md"
-                                  aria-label={`Select question: ${q.question_text.substring(0, 100)}`}
-                                >
-                                  <MathText text={q.question_text} className="text-xs text-gray-900" />
-                                </button>
-                              ))
-                            ) : (
-                              <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
-                                <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
-                                <p className="text-xs text-gray-500">
-                                  Add questions to this topic in your Supabase database
-                                </p>
+                          {loadingBankIds.includes(slot.bankId) ? (
+                            <div className="flex items-center justify-center py-8">
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-300 border-t-indigo-600 mr-2" />
+                              <span className="text-sm text-gray-500">Loading questions…</span>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="mb-2 text-xs font-medium text-gray-600">Select Question:</p>
+                              <div className="space-y-2" key={`questions-${slot.bankId}-${refreshKey}`}>
+                                {getQuestionsForBank(slot.bankId).length > 0 ? (
+                                  getRandomQuestions(slot.bankId, 4).map((q) => (
+                                    <button
+                                      key={q.id}
+                                      onClick={() => updateSlot(slot.slotNumber, { question: q })}
+                                      className="w-full rounded-lg border border-gray-200 bg-white p-2 text-left transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-md"
+                                      aria-label={`Select question: ${q.question_text.substring(0, 100)}`}
+                                    >
+                                      <MathText text={q.question_text} className="text-xs text-gray-900" />
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
+                                    <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
+                                    <p className="text-xs text-gray-500">
+                                      Add questions to this topic in your Supabase database
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -483,11 +490,11 @@ export default function Home() {
             <ul className="space-y-3 text-sm text-indigo-100">
               <li className="flex items-start">
                 <span className="mr-2">📊</span>
-                <span>Track student performance over time with detailed analytics</span>
+                <span>Track class performance over time</span>
               </li>
               <li className="flex items-start">
                 <span className="mr-2">💾</span>
-                <span>Save and reuse your favorite Do-Now sets</span>
+                <span>Save and reuse your favourite Do-Now sets</span>
               </li>
               <li className="flex items-start">
                 <span className="mr-2">🎯</span>
@@ -495,11 +502,11 @@ export default function Home() {
               </li>
               <li className="flex items-start">
                 <span className="mr-2">📈</span>
-                <span>Use spaced repetition to maximize retention</span>
+                <span>Use spaced repetition to maximise retention</span>
               </li>
               <li className="flex items-start">
                 <span className="mr-2">👥</span>
-                <span>Manage multiple classes and student profiles</span>
+                <span>Manage multiple class profiles</span>
               </li>
             </ul>
           </div>

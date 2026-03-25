@@ -32,7 +32,7 @@ type QuestionSlot = {
   question: Question | null
 }
 
-// Color themes for each math strand
+// Colour themes for each maths strand
 const CATEGORY_STYLES: Record<string, { bg: string; border: string; text: string; hover: string }> = {
   'Number': { bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-700', hover: 'hover:bg-blue-200' },
   'Algebra': { bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-700', hover: 'hover:bg-purple-200' },
@@ -338,12 +338,12 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
     ))
   }
 
-  // Ensure the 6 math strands are used
+  // Ensure the 6 maths strands are used
   const MATH_STRANDS = ['Number', 'Algebra', 'Measurement', 'Geometry', 'Statistics', 'Probability']
   
   function getCategories(): string[] {
     const allCategories = [...new Set(banks.map(b => b.category))].sort()
-    // Filter to only show the 6 math strands that exist in the database
+    // Filter to only show the 6 maths strands that exist in the database
     return MATH_STRANDS.filter(strand => allCategories.includes(strand))
   }
 
