@@ -213,9 +213,9 @@ export default function DashboardPage() {
             {profiles.map((profile) => (
               <div
                 key={profile.id}
-                className="col-span-1 divide-y divide-gray-200 rounded-lg bg-white shadow"
+                className="col-span-1 flex flex-col divide-y divide-gray-200 rounded-lg bg-white shadow"
               >
-                <div className="flex w-full items-center justify-between space-x-6 p-6">
+                <div className="flex w-full flex-1 items-center justify-between space-x-6 p-6">
                   <div className="flex-1 truncate">
                     <div className="flex items-center space-x-3">
                       <h3 className="truncate text-lg font-medium text-gray-900">
