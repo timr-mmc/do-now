@@ -6,11 +6,13 @@ import { useEffect, useRef } from 'react';
 export type DiagramType = 
   // 2D Shapes
   | 'triangle' | 'rectangle' | 'square' | 'circle' | 'rightTriangle' | 'isoscelesTriangle' | 'equilateralTriangle'
-  | 'parallelogram' | 'trapezoid' | 'trapezium' | 'kite' | 'semicircle'
+  | 'parallelogram' | 'trapezoid' | 'trapezium' | 'kite' | 'semicircle' | 'regularPolygon'
   // 3D Shapes
   | 'cuboid' | 'cube' | 'cylinder' | 'triangularPrism' | 'pyramid'
-  // Angle Diagrams
-  | 'anglesOnLine' | 'triangleAngles' | 'parallelLinesTransversal' | 'verticallyOpposite' | 'anglesAtPoint';
+  // Angle Diagrams (JSXGraph)
+  | 'anglesOnLine' | 'triangleAngles' | 'parallelLinesTransversal' | 'verticallyOpposite' | 'anglesAtPoint' | 'circleTheorem'
+  // Coordinate & Transformation Diagrams (SVG)
+  | 'coordinateGrid' | 'reflectionGrid' | 'translationGrid' | 'rotationGrid' | 'enlargementDiagram';
 
 export interface DiagramDimensions {
   width?: number;
@@ -36,6 +38,14 @@ export interface DiagramDimensions {
   triangleBase?: number;  // For triangular prisms - the base of the triangular face
   triangleHeight?: number;  // For triangular prisms - the height of the triangular face
   triangleSide?: number;  // For triangular prisms with equilateral cross-section
+  // New fields
+  sides?: number;         // For regularPolygon - number of sides
+  xMin?: number;          // For coordinate grids
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  theoremType?: string;   // For circleTheorem - 'angleInSemicircle'|'anglesInSameSegment'|'angleCentreCircumference'|'cyclicQuadrilateral'|'tangentRadius'
+  scaleFactor?: number;   // For enlargementDiagram
 }
 
 export interface DiagramLabel {
@@ -53,6 +63,13 @@ export interface DiagramStyle {
   dashArray?: string;
 }
 
+export interface GridPoint {
+  x: number;
+  y: number;
+  label?: string;
+  style?: string; // 'blue'|'red'|'green'
+}
+
 export interface DiagramData {
   type: DiagramType;
   dimensions: DiagramDimensions;
@@ -60,6 +77,14 @@ export interface DiagramData {
   style?: DiagramStyle;
   showGrid?: boolean;
   scale?: number;
+  // Coordinate and transformation diagram data
+  gridPoints?: GridPoint[];               // Labeled points on a coordinate grid
+  shape?: Array<{x: number; y: number}>;  // Original shape vertices
+  shape2?: Array<{x: number; y: number}>; // Transformed shape vertices
+  axis?: string;                          // Mirror axis: 'x', 'y', 'y=x', 'y=-x', 'x=N', 'y=N'
+  vector?: {x: number; y: number};        // Translation vector
+  centre?: {x: number; y: number};        // Centre of rotation or enlargement
+  rotationAngle?: number;                 // Rotation angle in degrees
 }
 
 interface GeometryDiagramProps {
@@ -72,7 +97,7 @@ export default function GeometryDiagram({ data, className = '' }: GeometryDiagra
   const jsxGraphRef = useRef<HTMLDivElement>(null);
   
   // Determine if this diagram type uses JSXGraph
-  const isAngleDiagram = data && ['anglesOnLine', 'triangleAngles', 'parallelLinesTransversal', 'verticallyOpposite', 'anglesAtPoint'].includes(data.type);
+  const isAngleDiagram = data && ['anglesOnLine', 'triangleAngles', 'parallelLinesTransversal', 'verticallyOpposite', 'anglesAtPoint', 'circleTheorem'].includes(data.type);  // circleTheorem uses JSXGraph
 
   useEffect(() => {
     if (!data) return;
@@ -141,6 +166,9 @@ function renderWithJSXGraph(container: HTMLDivElement, data: DiagramData) {
           break;
         case 'anglesAtPoint':
           drawAnglesAtPointJSX(board, data);
+          break;
+        case 'circleTheorem':
+          drawCircleTheoremJSX(board, data);
           break;
       }
     }).catch(err => {
@@ -624,10 +652,30 @@ function renderWithSVG(svg: SVGSVGElement, data: DiagramData) {
       case 'pyramid':
         drawPyramid(svg, data, defaultStyle, scale);
         break;
+      case 'regularPolygon':
+        drawRegularPolygon(svg, data, defaultStyle, scale);
+        break;
+      case 'coordinateGrid':
+        drawCoordinateGrid(svg, data, defaultStyle, scale);
+        break;
+      case 'reflectionGrid':
+        drawReflectionGrid(svg, data, defaultStyle, scale);
+        break;
+      case 'translationGrid':
+        drawTranslationGrid(svg, data, defaultStyle, scale);
+        break;
+      case 'rotationGrid':
+        drawRotationGrid(svg, data, defaultStyle, scale);
+        break;
+      case 'enlargementDiagram':
+        drawEnlargementDiagram(svg, data, defaultStyle, scale);
+        break;
     }
 
-    // Add labels (only for SVG shapes, JSXGraph handles its own labels)
-    if (data.labels) {
+    // Add external labels (skipped for types that manage their own labels internally)
+    const typesWithInternalLabels = ['regularPolygon', 'coordinateGrid', 'reflectionGrid',
+      'translationGrid', 'rotationGrid', 'enlargementDiagram'];
+    if (!typesWithInternalLabels.includes(data.type) && data.labels) {
       data.labels.forEach(label => {
         addLabel(svg, label, data, scale);
       });
@@ -1746,5 +1794,402 @@ function drawPyramid(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle,
   slantLine.setAttribute('stroke', 'red');
   slantLine.setAttribute('stroke-width', '2');
   svg.appendChild(slantLine);
+}
+
+// ============================================================
+// NEW DIAGRAM TYPES
+// ============================================================
+
+// ------ JSXGraph: Circle Theorem diagrams -------------------
+
+function drawCircleTheoremJSX(board: any, data: DiagramData) {
+  const theoremType = (data.dimensions as any).theoremType || 'angleInSemicircle';
+  switch (theoremType) {
+    case 'angleInSemicircle':     drawAngleInSemicircleJSX(board, data);        break;
+    case 'anglesInSameSegment':   drawAnglesInSameSegmentJSX(board, data);      break;
+    case 'angleCentreCircumference': drawAngleCentreCircumJS(board, data);      break;
+    case 'cyclicQuadrilateral':   drawCyclicQuadrilateralJSX(board, data);      break;
+    case 'tangentRadius':         drawTangentRadiusJSX(board, data);            break;
+    default:                      drawAngleInSemicircleJSX(board, data);
+  }
+}
+
+function drawAngleInSemicircleJSX(board: any, data: DiagramData) {
+  const cx = 5, cy = 3.5, r = 3;
+  const O = board.create('point', [cx, cy], { name: 'O', size: 4, fillColor: '#1f2937', strokeColor: '#1f2937',
+    label: { fontSize: 14, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+  board.create('circle', [O, r], { strokeColor: '#1f2937', strokeWidth: 2, fillColor: 'none' });
+  const A = board.create('point', [cx - r, cy], { name: 'A', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937',
+    label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  const B = board.create('point', [cx + r, cy], { name: 'B', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937',
+    label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [A, B], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  const angleDeg = data.dimensions.angle1 || 120;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const C = board.create('point', [cx + r * Math.cos(angleRad), cy + r * Math.sin(angleRad)],
+    { name: 'C', size: 4, fillColor: '#10b981', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [C, A], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [C, B], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('angle', [A, C, B], {
+    radius: 0.5, type: 'square', orthoSensitivity: 0.1,
+    name: data.labels?.[0]?.text ?? '90°',
+    strokeColor: '#ef4444', strokeWidth: 2, fillColor: '#ef4444', fillOpacity: 0.2,
+    label: { fontSize: 16, color: '#1f2937', cssStyle: 'font-weight:bold' }
+  });
+}
+
+function drawAnglesInSameSegmentJSX(board: any, data: DiagramData) {
+  const cx = 5, cy = 3.5, r = 3;
+  board.create('circle', [board.create('point', [cx, cy], { visible: false }), r],
+    { strokeColor: '#1f2937', strokeWidth: 2, fillColor: 'none' });
+  const P = board.create('point', [cx + r * Math.cos(2.5), cy + r * Math.sin(2.5)],
+    { name: 'P', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  const Q = board.create('point', [cx + r * Math.cos(-0.3), cy + r * Math.sin(-0.3)],
+    { name: 'Q', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [P, Q], { strokeColor: '#d1d5db', strokeWidth: 1.5, straightFirst: false, straightLast: false });
+  const A = board.create('point', [cx + r * Math.cos(1.3), cy + r * Math.sin(1.3)],
+    { name: 'A', size: 4, fillColor: '#10b981', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  const B = board.create('point', [cx + r * Math.cos(0.5), cy + r * Math.sin(0.5)],
+    { name: 'B', size: 4, fillColor: '#f59e0b', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [A, P], { strokeColor: '#10b981', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [A, Q], { strokeColor: '#10b981', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [B, P], { strokeColor: '#f59e0b', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [B, Q], { strokeColor: '#f59e0b', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('angle', [P, A, Q], { radius: 0.5, name: data.labels?.[0]?.text ?? 'α',
+    strokeColor: '#10b981', fillColor: '#10b981', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 16, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+  board.create('angle', [P, B, Q], { radius: 0.5, name: data.labels?.[1]?.text ?? 'α',
+    strokeColor: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 16, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+}
+
+function drawAngleCentreCircumJS(board: any, data: DiagramData) {
+  const cx = 5, cy = 3.5, r = 3;
+  const O = board.create('point', [cx, cy], { name: 'O', size: 4, fillColor: '#1f2937', strokeColor: '#1f2937',
+    label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('circle', [O, r], { strokeColor: '#1f2937', strokeWidth: 2, fillColor: 'none' });
+  const P = board.create('point', [cx + r * Math.cos(2.4), cy + r * Math.sin(2.4)],
+    { name: 'P', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  const Q = board.create('point', [cx + r * Math.cos(-0.2), cy + r * Math.sin(-0.2)],
+    { name: 'Q', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  const A = board.create('point', [cx + r * Math.cos(1.0), cy + r * Math.sin(1.0)],
+    { name: 'A', size: 4, fillColor: '#10b981', strokeColor: '#1f2937', label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [O, P], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [O, Q], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [A, P], { strokeColor: '#10b981', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('line', [A, Q], { strokeColor: '#10b981', strokeWidth: 2, straightFirst: false, straightLast: false });
+  board.create('angle', [P, O, Q], { radius: 0.6, name: data.labels?.[0]?.text ?? '2α',
+    strokeColor: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 15, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+  board.create('angle', [P, A, Q], { radius: 0.5, name: data.labels?.[1]?.text ?? 'α',
+    strokeColor: '#10b981', fillColor: '#10b981', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 16, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+}
+
+function drawCyclicQuadrilateralJSX(board: any, data: DiagramData) {
+  const cx = 5, cy = 3.5, r = 2.8;
+  board.create('circle', [board.create('point', [cx, cy], { visible: false }), r],
+    { strokeColor: '#1f2937', strokeWidth: 2, fillColor: 'none' });
+  const degs = [60, 140, 200, 310];
+  const names = ['A', 'B', 'C', 'D'];
+  const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
+  const pts = degs.map((deg, i) => {
+    const rad = (deg * Math.PI) / 180;
+    return board.create('point', [cx + r * Math.cos(rad), cy + r * Math.sin(rad)],
+      { name: names[i], size: 4, fillColor: colors[i], strokeColor: '#1f2937',
+        label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  });
+  board.create('polygon', pts, { borders: { strokeColor: '#374151', strokeWidth: 2 }, fillColor: 'none', vertices: { visible: false } });
+  board.create('angle', [pts[3], pts[0], pts[1]], { radius: 0.5, name: data.labels?.[0]?.text ?? 'α',
+    strokeColor: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 16, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+  board.create('angle', [pts[1], pts[2], pts[3]], { radius: 0.5, name: data.labels?.[1]?.text ?? '180°−α',
+    strokeColor: '#10b981', fillColor: '#10b981', fillOpacity: 0.2, strokeWidth: 2,
+    label: { fontSize: 14, color: '#1f2937', cssStyle: 'font-weight:bold' } });
+}
+
+function drawTangentRadiusJSX(board: any, data: DiagramData) {
+  const cx = 4.5, cy = 3.5, r = 2.5;
+  const O = board.create('point', [cx, cy], { name: 'O', size: 4, fillColor: '#1f2937', strokeColor: '#1f2937',
+    label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('circle', [O, r], { strokeColor: '#1f2937', strokeWidth: 2, fillColor: 'none' });
+  const T = board.create('point', [cx + r, cy], { name: 'T', size: 4, fillColor: '#3b82f6', strokeColor: '#1f2937',
+    label: { fontSize: 14, cssStyle: 'font-weight:bold' } });
+  board.create('line', [O, T], { strokeColor: '#374151', strokeWidth: 2, straightFirst: false, straightLast: false });
+  const tTop = board.create('point', [cx + r, cy + 3.2], { visible: false, fixed: true });
+  const tBot = board.create('point', [cx + r, cy - 3.2], { visible: false, fixed: true });
+  board.create('line', [tTop, tBot], { strokeColor: '#1f2937', strokeWidth: 2 });
+  board.create('angle', [O, T, tTop], {
+    type: 'square', orthoSensitivity: 0.1,
+    radius: 0.3, name: data.labels?.[0]?.text ?? '90°',
+    strokeColor: '#ef4444', strokeWidth: 2, fillColor: 'none',
+    label: { fontSize: 14, color: '#1f2937', cssStyle: 'font-weight:bold' }
+  });
+}
+
+// ------ SVG: Regular Polygon (for Angles in Polygons) -------
+
+function drawRegularPolygon(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const n = Math.max(3, Math.round(data.dimensions.sides ?? 5));
+  const r = (data.dimensions.radius ?? 78) * scale;
+  const cx = 150, cy = 128;
+
+  // Vertices – clockwise from top
+  const verts: {x: number; y: number}[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i / n) - Math.PI / 2;
+    verts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+
+  // Draw polygon
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  poly.setAttribute('points', verts.map(v => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join(' '));
+  poly.setAttribute('fill', style.fill || 'rgba(59,130,246,0.06)');
+  poly.setAttribute('stroke', style.stroke || '#1f2937');
+  poly.setAttribute('stroke-width', style.strokeWidth?.toString() || '2');
+  svg.appendChild(poly);
+
+  // Interior angle value
+  const intAngleRad = ((n - 2) * Math.PI) / n;
+  const halfAngle = intAngleRad / 2;
+  const arcR = Math.min(20, r * 0.25);
+
+  // Mark interior angle arc at every vertex
+  verts.forEach((v) => {
+    const bisector = Math.atan2(cy - v.y, cx - v.x); // toward centre
+    const a1 = bisector - halfAngle;
+    const a2 = bisector + halfAngle;
+    const sx = v.x + arcR * Math.cos(a1);
+    const sy = v.y + arcR * Math.sin(a1);
+    const ex = v.x + arcR * Math.cos(a2);
+    const ey = v.y + arcR * Math.sin(a2);
+    const largeArc = intAngleRad > Math.PI ? 1 : 0;
+    // sweep=1 (CW in SVG screen coords) sweeps through the bisector direction
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${arcR} ${arcR} 0 ${largeArc} 1 ${ex.toFixed(1)} ${ey.toFixed(1)}`);
+    path.setAttribute('fill', 'rgba(59,130,246,0.15)');
+    path.setAttribute('stroke', '#3b82f6');
+    path.setAttribute('stroke-width', '1.5');
+    svg.appendChild(path);
+    // Vertex dot
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', v.x.toFixed(1)); dot.setAttribute('cy', v.y.toFixed(1));
+    dot.setAttribute('r', '3'); dot.setAttribute('fill', '#1f2937');
+    svg.appendChild(dot);
+  });
+
+  // Label the interior angle near the top vertex (index 0)
+  const labelText = data.labels?.[0]?.text ?? `${((n - 2) * 180 / n).toFixed(0)}°`;
+  const topV = verts[0];
+  const labelDir = Math.atan2(cy - topV.y, cx - topV.x);
+  const labelDist = arcR + 16;
+  const lx = topV.x + labelDist * Math.cos(labelDir);
+  const ly = topV.y + labelDist * Math.sin(labelDir);
+  const tEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  tEl.setAttribute('x', lx.toFixed(0)); tEl.setAttribute('y', ly.toFixed(0));
+  tEl.setAttribute('text-anchor', 'middle'); tEl.setAttribute('dominant-baseline', 'middle');
+  tEl.setAttribute('font-size', '13'); tEl.setAttribute('font-weight', 'bold');
+  tEl.setAttribute('fill', '#1f2937'); tEl.textContent = labelText;
+  svg.appendChild(tEl);
+}
+
+// ------ Coordinate Grid shared helpers ----------------------
+
+interface GridSetup {
+  svgX: (x: number) => number;
+  svgY: (y: number) => number;
+  unit: number;
+}
+
+function buildGrid(svg: SVGSVGElement, xMin: number, xMax: number, yMin: number, yMax: number): GridSetup {
+  const margin = 28, W = 300, H = 250;
+  const unit = Math.min((W - 2 * margin) / (xMax - xMin), (H - 2 * margin) / (yMax - yMin));
+  const ox = margin + (-xMin) * unit;
+  const oy = margin + yMax * unit;
+  const sX = (x: number) => ox + x * unit;
+  const sY = (y: number) => oy - y * unit;
+
+  // Grid lines
+  for (let gx = Math.ceil(xMin); gx <= Math.floor(xMax); gx++) {
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('x1', sX(gx).toFixed(0)); ln.setAttribute('y1', (margin).toString());
+    ln.setAttribute('x2', sX(gx).toFixed(0)); ln.setAttribute('y2', (H - margin).toString());
+    ln.setAttribute('stroke', gx === 0 ? '#374151' : '#e5e7eb');
+    ln.setAttribute('stroke-width', gx === 0 ? '1.5' : '0.5');
+    svg.appendChild(ln);
+    if (gx !== 0) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', sX(gx).toFixed(0)); t.setAttribute('y', (sY(0) + 13).toFixed(0));
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '9'); t.setAttribute('fill', '#9ca3af');
+      t.textContent = gx.toString(); svg.appendChild(t);
+    }
+  }
+  for (let gy = Math.ceil(yMin); gy <= Math.floor(yMax); gy++) {
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('x1', margin.toString()); ln.setAttribute('y1', sY(gy).toFixed(0));
+    ln.setAttribute('x2', (W - margin).toString()); ln.setAttribute('y2', sY(gy).toFixed(0));
+    ln.setAttribute('stroke', gy === 0 ? '#374151' : '#e5e7eb');
+    ln.setAttribute('stroke-width', gy === 0 ? '1.5' : '0.5');
+    svg.appendChild(ln);
+    if (gy !== 0) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', (sX(0) - 7).toFixed(0)); t.setAttribute('y', (sY(gy) + 4).toFixed(0));
+      t.setAttribute('text-anchor', 'end'); t.setAttribute('font-size', '9'); t.setAttribute('fill', '#9ca3af');
+      t.textContent = gy.toString(); svg.appendChild(t);
+    }
+  }
+  return { svgX: sX, svgY: sY, unit };
+}
+
+function placeShape(svg: SVGSVGElement, pts: Array<{x: number; y: number}>, g: GridSetup,
+                    fill: string, stroke: string, shapeLabel?: string) {
+  if (pts.length < 2) return;
+  const svgPts = pts.map(p => `${g.svgX(p.x).toFixed(0)},${g.svgY(p.y).toFixed(0)}`).join(' ');
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  poly.setAttribute('points', svgPts); poly.setAttribute('fill', fill);
+  poly.setAttribute('stroke', stroke); poly.setAttribute('stroke-width', '2');
+  svg.appendChild(poly);
+  pts.forEach(p => {
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', g.svgX(p.x).toFixed(0)); dot.setAttribute('cy', g.svgY(p.y).toFixed(0));
+    dot.setAttribute('r', '3'); dot.setAttribute('fill', stroke); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1');
+    svg.appendChild(dot);
+  });
+  if (shapeLabel) {
+    const cx = pts.reduce((s, p) => s + g.svgX(p.x), 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + g.svgY(p.y), 0) / pts.length;
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', cx.toFixed(0)); t.setAttribute('y', cy.toFixed(0));
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+    t.setAttribute('font-size', '13'); t.setAttribute('font-weight', 'bold'); t.setAttribute('fill', stroke);
+    t.textContent = shapeLabel; svg.appendChild(t);
+  }
+}
+
+// ------ SVG: Coordinate Grid --------------------------------
+
+function drawCoordinateGrid(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const { xMin = -5, xMax = 5, yMin = -5, yMax = 5 } = data.dimensions;
+  const g = buildGrid(svg, xMin, xMax, yMin, yMax);
+
+  // Draw line between two grid points if exactly two are supplied
+  if (data.gridPoints && data.gridPoints.length === 2) {
+    const [p1, p2] = data.gridPoints;
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('x1', g.svgX(p1.x).toFixed(0)); ln.setAttribute('y1', g.svgY(p1.y).toFixed(0));
+    ln.setAttribute('x2', g.svgX(p2.x).toFixed(0)); ln.setAttribute('y2', g.svgY(p2.y).toFixed(0));
+    ln.setAttribute('stroke', '#374151'); ln.setAttribute('stroke-width', '2');
+    svg.appendChild(ln);
+  }
+
+  // Draw named points
+  (data.gridPoints ?? []).forEach(pt => {
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const col = pt.style === 'red' ? '#ef4444' : pt.style === 'green' ? '#10b981' : '#3b82f6';
+    dot.setAttribute('cx', g.svgX(pt.x).toFixed(0)); dot.setAttribute('cy', g.svgY(pt.y).toFixed(0));
+    dot.setAttribute('r', '4'); dot.setAttribute('fill', col); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1');
+    svg.appendChild(dot);
+    if (pt.label) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', (g.svgX(pt.x) + 8).toFixed(0)); t.setAttribute('y', (g.svgY(pt.y) - 5).toFixed(0));
+      t.setAttribute('font-size', '13'); t.setAttribute('font-weight', 'bold'); t.setAttribute('fill', col);
+      t.textContent = pt.label; svg.appendChild(t);
+    }
+  });
+
+  // Optional shape outline
+  if (data.shape) placeShape(svg, data.shape, g, 'rgba(59,130,246,0.12)', '#3b82f6', data.labels?.[0]?.text);
+}
+
+// ------ SVG: Reflection Grid --------------------------------
+
+function drawReflectionGrid(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const { xMin = -6, xMax = 6, yMin = -6, yMax = 6 } = data.dimensions;
+  const g = buildGrid(svg, xMin, xMax, yMin, yMax);
+
+  // Mirror axis line
+  const axis = data.axis || 'y';
+  const drawAxisLine = (x1: number, y1: number, x2: number, y2: number) => {
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('x1', g.svgX(x1).toFixed(0)); ln.setAttribute('y1', g.svgY(y1).toFixed(0));
+    ln.setAttribute('x2', g.svgX(x2).toFixed(0)); ln.setAttribute('y2', g.svgY(y2).toFixed(0));
+    ln.setAttribute('stroke', '#6d28d9'); ln.setAttribute('stroke-width', '2');
+    ln.setAttribute('stroke-dasharray', '6,3');
+    svg.appendChild(ln);
+  };
+  if (axis === 'x') drawAxisLine(xMin, 0, xMax, 0);
+  else if (axis === 'y') drawAxisLine(0, yMin, 0, yMax);
+  else if (axis === 'y=x') drawAxisLine(Math.max(xMin, yMin), Math.max(xMin, yMin), Math.min(xMax, yMax), Math.min(xMax, yMax));
+  else if (axis === 'y=-x') drawAxisLine(Math.max(xMin, -yMax), -Math.max(xMin, -yMax), Math.min(xMax, -yMin), -Math.min(xMax, -yMin));
+  else if (axis.startsWith('x=')) {
+    const xVal = parseFloat(axis.slice(2));
+    drawAxisLine(xVal, yMin, xVal, yMax);
+  } else if (axis.startsWith('y=')) {
+    const yVal = parseFloat(axis.slice(2));
+    drawAxisLine(xMin, yVal, xMax, yVal);
+  }
+
+  if (data.shape)  placeShape(svg, data.shape,  g, 'rgba(59,130,246,0.15)',  '#3b82f6', 'A');
+  if (data.shape2) placeShape(svg, data.shape2, g, 'rgba(239,68,68,0.15)',   '#ef4444', "A'");
+}
+
+// ------ SVG: Translation Grid --------------------------------
+
+function drawTranslationGrid(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const { xMin = -6, xMax = 6, yMin = -6, yMax = 6 } = data.dimensions;
+  const g = buildGrid(svg, xMin, xMax, yMin, yMax);
+  if (data.shape)  placeShape(svg, data.shape,  g, 'rgba(59,130,246,0.15)',  '#3b82f6', 'A');
+  if (data.shape2) placeShape(svg, data.shape2, g, 'rgba(239,68,68,0.15)',   '#ef4444', "A'");
+  // Draw translation vector arrow from centroid of shape to centroid of shape2
+  if (data.shape && data.shape2 && data.vector) {
+    const cx = data.shape.reduce((s, p) => s + p.x, 0) / data.shape.length;
+    const cy = data.shape.reduce((s, p) => s + p.y, 0) / data.shape.length;
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    arrow.setAttribute('x1', g.svgX(cx).toFixed(0)); arrow.setAttribute('y1', g.svgY(cy).toFixed(0));
+    arrow.setAttribute('x2', g.svgX(cx + data.vector.x).toFixed(0)); arrow.setAttribute('y2', g.svgY(cy + data.vector.y).toFixed(0));
+    arrow.setAttribute('stroke', '#7c3aed'); arrow.setAttribute('stroke-width', '2'); arrow.setAttribute('marker-end', 'url(#arrowPurple)');
+    svg.appendChild(arrow);
+  }
+}
+
+// ------ SVG: Rotation Grid ----------------------------------
+
+function drawRotationGrid(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const { xMin = -6, xMax = 6, yMin = -6, yMax = 6 } = data.dimensions;
+  const g = buildGrid(svg, xMin, xMax, yMin, yMax);
+  if (data.shape)  placeShape(svg, data.shape,  g, 'rgba(59,130,246,0.15)',  '#3b82f6', 'A');
+  if (data.shape2) placeShape(svg, data.shape2, g, 'rgba(239,68,68,0.15)',   '#ef4444', "A'");
+  // Draw centre of rotation
+  if (data.centre) {
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', g.svgX(data.centre.x).toFixed(0)); dot.setAttribute('cy', g.svgY(data.centre.y).toFixed(0));
+    dot.setAttribute('r', '5'); dot.setAttribute('fill', '#7c3aed'); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1.5');
+    svg.appendChild(dot);
+  }
+}
+
+// ------ SVG: Enlargement Diagram ----------------------------
+
+function drawEnlargementDiagram(svg: SVGSVGElement, data: DiagramData, style: DiagramStyle, scale: number) {
+  const { xMin = -2, xMax = 10, yMin = -2, yMax = 8 } = data.dimensions;
+  const g = buildGrid(svg, xMin, xMax, yMin, yMax);
+  if (data.shape)  placeShape(svg, data.shape,  g, 'rgba(59,130,246,0.15)',  '#3b82f6', 'A');
+  if (data.shape2) placeShape(svg, data.shape2, g, 'rgba(239,68,68,0.15)',   '#ef4444', "A'");
+  // Draw rays from centre of enlargement through each vertex
+  if (data.centre && data.shape && data.shape2) {
+    data.shape.forEach((p, i) => {
+      const p2 = data.shape2![i];
+      if (!p2) return;
+      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      ln.setAttribute('x1', g.svgX(data.centre!.x).toFixed(0)); ln.setAttribute('y1', g.svgY(data.centre!.y).toFixed(0));
+      ln.setAttribute('x2', g.svgX(p2.x).toFixed(0)); ln.setAttribute('y2', g.svgY(p2.y).toFixed(0));
+      ln.setAttribute('stroke', '#d1d5db'); ln.setAttribute('stroke-width', '1'); ln.setAttribute('stroke-dasharray', '4,2');
+      svg.appendChild(ln);
+    });
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', g.svgX(data.centre.x).toFixed(0)); dot.setAttribute('cy', g.svgY(data.centre.y).toFixed(0));
+    dot.setAttribute('r', '5'); dot.setAttribute('fill', '#7c3aed'); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1.5');
+    svg.appendChild(dot);
+  }
 }
 

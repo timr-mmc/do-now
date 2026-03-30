@@ -1,7 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
-export default function SetupClassPage() {
+export default async function SetupClassPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
+  const { error: errorMessage } = await searchParams
+
   async function createClass(formData: FormData) {
     'use server'
 
@@ -89,7 +95,11 @@ export default function SetupClassPage() {
               />
             </div>
           </div>
-
+          {errorMessage && (
+            <div className="rounded-md bg-red-50 p-4">
+              <p className="text-sm text-red-700">{decodeURIComponent(errorMessage)}</p>
+            </div>
+          )}
           <div>
             <button
               type="submit"

@@ -150,7 +150,7 @@ export default function Home() {
 
     // Create anonymous session (no profile_id)
     const { data: session, error: sessionError } = await supabase
-      .from('sessions')
+      .from('do_now_sessions')
       .insert({
         profile_id: null, // Anonymous session
         title: 'Do-Now Session',
