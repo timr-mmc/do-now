@@ -14,8 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Do-Now | Maths Warm-Up Activities",
-  description: "Generate and display targeted maths warm-up (Do-Now) activities for NZ Year 9–10 students. Built for classroom teachers.",
+  title: {
+    default: "Do Now",
+    template: "%s | Do Now",
+  },
+  description: "Developed by NZMathHub.com — Generate and display targeted maths warm-up (Do-Now) activities for NZ Year 9–10 students.",
 };
 
 export default function RootLayout({

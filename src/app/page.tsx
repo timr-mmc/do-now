@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -20,6 +20,7 @@ type Question = {
   question_text: string
   answer: string
   bank_id: string
+  difficulty?: number
   diagram_data?: DiagramData | null
 }
 
@@ -63,6 +64,9 @@ export default function Home() {
   const [creating, setCreating] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0) // For forcing re-render of random questions
+  const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([1, 2, 3, 4, 5])
+  const [difficultyOpen, setDifficultyOpen] = useState(false)
+  const difficultyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     async function checkUser() {
@@ -78,6 +82,17 @@ export default function Home() {
     
     checkUser()
     loadQuestionBanks()
+  }, [])
+
+  // Close difficulty dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (difficultyRef.current && !difficultyRef.current.contains(e.target as Node)) {
+        setDifficultyOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   async function loadQuestionBanks() {
@@ -97,7 +112,7 @@ export default function Home() {
     setLoadingBankIds(prev => [...prev, bankId])
     const { data, error } = await supabase
       .from('questions')
-      .select('id, question_text, answer, bank_id, diagram_data')
+      .select('id, question_text, answer, bank_id, difficulty, diagram_data')
       .eq('bank_id', bankId)
     if (error) console.error('Error loading questions for bank:', error)
     setAllQuestions(prev => ({ ...prev, [bankId]: data || [] }))
@@ -130,7 +145,9 @@ export default function Home() {
   }
 
   function getRandomQuestions(bankId: string, count: number = 4): Question[] {
-    const questions = getQuestionsForBank(bankId)
+    const questions = getQuestionsForBank(bankId).filter(q =>
+      selectedDifficulties.length === 0 || selectedDifficulties.includes(q.difficulty ?? 1)
+    )
     if (questions.length <= count) {
       return questions
     }
@@ -219,21 +236,70 @@ export default function Home() {
                 <span className="text-indigo-600 text-xl">{slots.filter(s => s.question).length}</span>
                 <span className="text-gray-500"> / 6 questions selected</span>
               </div>
-              <button
-                onClick={() => setShowAnswers(!showAnswers)}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  showAnswers
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {showAnswers ? '👁️ Answers Shown' : '👁️‍🗨️ Preview Answers'}
-              </button>
+              <div className="flex items-center gap-3">
+                {/* Difficulty Filter */}
+                <div className="relative" ref={difficultyRef}>
+                  <button
+                    onClick={() => setDifficultyOpen(prev => !prev)}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <span>Difficulty:</span>
+                    <span className="font-semibold text-indigo-600">
+                      {selectedDifficulties.length === 5 ? 'All' : selectedDifficulties.length === 0 ? 'None' : selectedDifficulties.map(d => `L${d}`).join(', ')}
+                    </span>
+                    <svg className={`h-4 w-4 text-gray-500 transition-transform ${difficultyOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {difficultyOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-xl border border-gray-200 bg-white shadow-lg p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Difficulty</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => setSelectedDifficulties([1, 2, 3, 4, 5])} className="text-xs text-indigo-600 hover:underline">All</button>
+                          <button onClick={() => setSelectedDifficulties([])} className="text-xs text-gray-400 hover:underline">None</button>
+                        </div>
+                      </div>
+                      {[
+                        { level: 1, label: 'Level 1', stars: '★' },
+                        { level: 2, label: 'Level 2', stars: '★★' },
+                        { level: 3, label: 'Level 3', stars: '★★★' },
+                        { level: 4, label: 'Level 4', stars: '★★★★' },
+                        { level: 5, label: 'Level 5', stars: '★★★★★' },
+                      ].map(({ level, label, stars }) => (
+                        <label key={level} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedDifficulties.includes(level)}
+                            onChange={() => setSelectedDifficulties(prev =>
+                              prev.includes(level) ? prev.filter(d => d !== level) : [...prev, level].sort((a, b) => a - b)
+                            )}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-gray-700">{label}</span>
+                          <span className="ml-auto text-xs text-amber-400">{stars}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowAnswers(!showAnswers)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    showAnswers
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {showAnswers ? '👁️ Answers Shown' : '👁️‍🗨️ Preview Answers'}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {slots.map((slot) => {
                 const categoryStyle = slot.category ? CATEGORY_STYLES[slot.category] : null
+                const slotRandomQuestions = slot.bankId && !slot.question ? getRandomQuestions(slot.bankId, 4) : []
 
                 return (
                   <div
@@ -406,8 +472,20 @@ export default function Home() {
                             <>
                               <p className="mb-2 text-xs font-medium text-gray-600">Select Question:</p>
                               <div className="space-y-2" key={`questions-${slot.bankId}-${refreshKey}`}>
-                                {getQuestionsForBank(slot.bankId).length > 0 ? (
-                                  getRandomQuestions(slot.bankId, 4).map((q) => (
+                                {getQuestionsForBank(slot.bankId).length === 0 ? (
+                                  <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
+                                    <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
+                                    <p className="text-xs text-gray-500">
+                                      Add questions to this topic in your Supabase database
+                                    </p>
+                                  </div>
+                                ) : slotRandomQuestions.length === 0 ? (
+                                  <div className="rounded-lg border-2 border-dashed border-amber-200 bg-amber-50 p-4 text-center">
+                                    <p className="text-sm font-medium text-amber-700">No questions at selected levels</p>
+                                    <p className="mt-1 text-xs text-amber-600">Try selecting more difficulty levels above</p>
+                                  </div>
+                                ) : (
+                                  slotRandomQuestions.map((q) => (
                                     <button
                                       key={q.id}
                                       onClick={() => updateSlot(slot.slotNumber, { question: q })}
@@ -417,13 +495,6 @@ export default function Home() {
                                       <MathText text={q.question_text} className="text-xs text-gray-900" />
                                     </button>
                                   ))
-                                ) : (
-                                  <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
-                                    <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
-                                    <p className="text-xs text-gray-500">
-                                      Add questions to this topic in your Supabase database
-                                    </p>
-                                  </div>
                                 )}
                               </div>
                             </>
@@ -479,7 +550,8 @@ export default function Home() {
       <div className="w-1/4 bg-gradient-to-br from-indigo-600 to-purple-700 p-8 text-white">
         <div className="flex h-full flex-col">
           <div className="mb-8">
-            <h2 className="text-3xl font-bold">Maths Do Now</h2>
+            <h2 className="text-3xl font-bold">Do Now</h2>
+            <p className="mt-1 text-xs font-medium text-indigo-200">Developed by NZMathHub.com</p>
             <p className="mt-2 text-sm text-indigo-100">
               Quick, effective retrieval practice for every maths lesson
             </p>

@@ -11,7 +11,7 @@ export default function SignupPage() {
 
     const supabase = await createClient()
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
     })
@@ -21,6 +21,12 @@ export default function SignupPage() {
       redirect('/signup?error=' + encodeURIComponent(error.message))
     }
 
+    // Session present = email confirmation disabled, user is already authenticated
+    if (data.session) {
+      redirect('/dashboard')
+    }
+
+    // Email confirmation required
     redirect('/login?message=' + encodeURIComponent('Check your email to confirm your account'))
   }
 
