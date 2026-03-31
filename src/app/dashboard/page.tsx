@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import OnboardingTooltip from '@/components/OnboardingTooltip'
 
 interface Profile {
   id: string
@@ -20,6 +21,8 @@ export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [userEmail, setUserEmail] = useState<string>('')
+  const [userId, setUserId] = useState<string>('')
+  const [showDoNowHint, setShowDoNowHint] = useState(false)
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
@@ -33,6 +36,7 @@ export default function DashboardPage() {
       }
 
       setUserEmail(user.email || '')
+      setUserId(user.id)
 
       // Fetch active profiles only (not archived)
       const { data, error } = await supabase
@@ -45,7 +49,15 @@ export default function DashboardPage() {
       if (error) {
         console.error('Error fetching profiles:', error)
       } else {
-        setProfiles(data || [])
+        const loadedProfiles = data || []
+        setProfiles(loadedProfiles)
+        // Show Do-Now hint once after first class is created
+        if (
+          loadedProfiles.length > 0 &&
+          localStorage.getItem(`onboarding_donow:${user.id}`) !== 'done'
+        ) {
+          setShowDoNowHint(true)
+        }
       }
 
       setLoading(false)
@@ -53,6 +65,11 @@ export default function DashboardPage() {
 
     loadData()
   }, [router, supabase])
+
+  function dismissDoNowHint() {
+    setShowDoNowHint(false)
+    if (userId) localStorage.setItem(`onboarding_donow:${userId}`, 'done')
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -122,7 +139,10 @@ export default function DashboardPage() {
           <div className="flex h-16 justify-between">
             <div className="flex">
               <div className="flex flex-shrink-0 items-center">
-                <h1 className="text-2xl font-bold text-indigo-600">Do-Now</h1>
+                <div>
+                  <h1 className="text-2xl font-bold text-indigo-600">Do Now</h1>
+                  <p className="text-xs text-gray-400 leading-none">Developed by NZMathHub.com</p>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -169,12 +189,23 @@ export default function DashboardPage() {
               Manage your classes and create Do-Now sessions
             </p>
           </div>
-          <Link
-            href="/profiles/new"
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-          >
-            + Add Class
-          </Link>
+          <div className="relative">
+            <Link
+              href="/profiles/new"
+              className={`rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${
+                profiles.length === 0 ? 'ring-2 ring-offset-2 ring-indigo-400 animate-pulse' : ''
+              }`}
+            >
+              + Add Class
+            </Link>
+            {profiles.length === 0 && !loading && (
+              <OnboardingTooltip
+                message="👋 Start here!"
+                subtext="Create your first class to get started."
+                arrowSide="top"
+              />
+            )}
+          </div>
         </div>
 
         {/* Profiles Grid */}
@@ -210,7 +241,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {profiles.map((profile) => (
+            {profiles.map((profile, index) => (
               <div
                 key={profile.id}
                 className="col-span-1 flex flex-col divide-y divide-gray-200 rounded-lg bg-white shadow"
@@ -234,10 +265,13 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <div className="-mt-px flex divide-x divide-gray-200">
-                    <div className="flex w-0 flex-1">
+                    <div className="relative flex w-0 flex-1">
                       <Link
                         href={`/create-do-now/${profile.id}`}
-                        className="relative -mr-px inline-flex w-0 flex-1 items-center justify-center gap-x-3 rounded-bl-lg border border-transparent py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                        onClick={index === 0 && showDoNowHint ? dismissDoNowHint : undefined}
+                        className={`relative -mr-px inline-flex w-0 flex-1 items-center justify-center gap-x-3 rounded-bl-lg border border-transparent py-4 text-sm font-semibold text-gray-900 hover:bg-gray-50 ${
+                          index === 0 && showDoNowHint ? 'ring-2 ring-inset ring-indigo-400 animate-pulse rounded-bl-lg' : ''
+                        }`}
                       >
                         <svg
                           className="h-5 w-5 text-gray-400"
@@ -249,6 +283,14 @@ export default function DashboardPage() {
                         </svg>
                         New Do-Now
                       </Link>
+                      {index === 0 && showDoNowHint && (
+                        <OnboardingTooltip
+                          message="🎉 Your class is ready!"
+                          subtext="Click here to create your first Do-Now."
+                          arrowSide="bottom"
+                          onDismiss={dismissDoNowHint}
+                        />
+                      )}
                     </div>
                     <div className="-ml-px flex w-0 flex-1">
                       <Link

@@ -15,6 +15,11 @@ type Question = {
   difficulty: number
   hint: string | null
   diagram_data: any | null
+  // context shown when viewing topic-level or flagged
+  category?: string
+  topic?: string
+  subtopic?: string
+  flag_count?: number
 }
 
 type EditDraft = {
@@ -42,6 +47,7 @@ function getCategoryStyle(category: string) {
 export default function ReviewQuestionsPage() {
   const supabase = createClient()
 
+  const [viewMode, setViewMode] = useState<'browse' | 'flagged'>('browse')
   const [categories, setCategories] = useState<string[]>([])
   const [topics, setTopics] = useState<string[]>([])
   const [subtopics, setSubtopics] = useState<string[]>([])
@@ -116,32 +122,97 @@ export default function ReviewQuestionsPage() {
     fetchSubtopics()
   }, [selectedCategory, selectedTopic, supabase])
 
-  // Fetch questions when subtopic changes
+  // Fetch questions when topic or subtopic changes
   useEffect(() => {
     setQuestions([])
-    if (!selectedCategory || !selectedTopic || !selectedSubtopic) return
+    if (!selectedCategory || !selectedTopic) return
     async function fetchQuestions() {
       setLoading(true)
-      // Look up bank_id first
-      const { data: bankData } = await supabase
-        .from('question_banks')
-        .select('id')
-        .eq('category', selectedCategory)
-        .eq('topic', selectedTopic)
-        .eq('subtopic', selectedSubtopic)
-        .single()
-      if (bankData?.id) {
-        const { data } = await supabase
-          .from('questions')
-          .select('id, question_text, answer, difficulty, hint, diagram_data')
-          .eq('bank_id', bankData.id)
-          .order('difficulty')
-        setQuestions(data ?? [])
+      if (selectedSubtopic) {
+        // Specific subtopic — fetch one bank
+        const { data: bankData } = await supabase
+          .from('question_banks')
+          .select('id')
+          .eq('category', selectedCategory)
+          .eq('topic', selectedTopic)
+          .eq('subtopic', selectedSubtopic)
+          .single()
+        if (bankData?.id) {
+          const { data } = await supabase
+            .from('questions')
+            .select('id, question_text, answer, difficulty, hint, diagram_data')
+            .eq('bank_id', bankData.id)
+            .order('difficulty')
+          setQuestions(data ?? [])
+        }
+      } else {
+        // All subtopics in this topic
+        const { data: banks } = await supabase
+          .from('question_banks')
+          .select('id, subtopic')
+          .eq('category', selectedCategory)
+          .eq('topic', selectedTopic)
+        if (banks && banks.length > 0) {
+          const bankIds = banks.map((b: any) => b.id)
+          const subtopicMap: Record<string, string> = Object.fromEntries(banks.map((b: any) => [b.id, b.subtopic]))
+          const { data } = await supabase
+            .from('questions')
+            .select('id, question_text, answer, difficulty, hint, diagram_data, bank_id')
+            .in('bank_id', bankIds)
+            .order('difficulty')
+          setQuestions((data ?? []).map((q: any) => ({ ...q, subtopic: subtopicMap[q.bank_id] })))
+        }
       }
       setLoading(false)
     }
     fetchQuestions()
   }, [selectedCategory, selectedTopic, selectedSubtopic, supabase])
+
+  // Fetch flagged questions
+  useEffect(() => {
+    if (viewMode !== 'flagged') return
+    async function fetchFlagged() {
+      setLoading(true)
+      setQuestions([])
+      // Get flagged question IDs with counts
+      const { data: flagData } = await supabase
+        .from('flagged_questions')
+        .select('question_id')
+      if (!flagData || flagData.length === 0) {
+        setLoading(false)
+        return
+      }
+      // Count flags per question
+      const flagCounts: Record<string, number> = {}
+      for (const f of flagData) {
+        flagCounts[f.question_id] = (flagCounts[f.question_id] ?? 0) + 1
+      }
+      const flaggedIds = Object.keys(flagCounts)
+      // Fetch questions with bank context
+      const { data: qData } = await supabase
+        .from('questions')
+        .select('id, question_text, answer, difficulty, hint, diagram_data, bank_id')
+        .in('id', flaggedIds)
+        .order('difficulty')
+      if (qData && qData.length > 0) {
+        const bankIds = [...new Set(qData.map((q: any) => q.bank_id))]
+        const { data: bankData } = await supabase
+          .from('question_banks')
+          .select('id, category, topic, subtopic')
+          .in('id', bankIds)
+        const bankMap: Record<string, any> = Object.fromEntries((bankData ?? []).map((b: any) => [b.id, b]))
+        setQuestions(qData.map((q: any) => ({
+          ...q,
+          category: bankMap[q.bank_id]?.category,
+          topic: bankMap[q.bank_id]?.topic,
+          subtopic: bankMap[q.bank_id]?.subtopic,
+          flag_count: flagCounts[q.id] ?? 1,
+        })))
+      }
+      setLoading(false)
+    }
+    fetchFlagged()
+  }, [viewMode, supabase])
 
   function startEdit(q: Question) {
     setEditingId(q.id)
@@ -220,7 +291,46 @@ export default function ReviewQuestionsPage() {
           <p className="mt-2 text-sm text-gray-600">Browse questions by category, topic and subtopic</p>
         </div>
 
-        {/* Filters */}
+        {/* Mode switcher */}
+        <div className="flex gap-3 mb-6">
+          <button
+            onClick={() => {
+              setViewMode('browse')
+              setQuestions([])
+            }}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              viewMode === 'browse'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Browse
+          </button>
+          <button
+            onClick={() => {
+              setViewMode('flagged')
+              setSelectedCategory('')
+              setSelectedTopic('')
+              setSelectedSubtopic('')
+            }}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              viewMode === 'flagged'
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+            Flagged Questions
+          </button>
+        </div>
+
+        {/* Filters — only shown in browse mode */}
+        {viewMode === 'browse' && (
         <div className="bg-white shadow-sm rounded-lg p-6 mb-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Select Questions to Review</h2>
           {loadingFilters ? (
@@ -273,7 +383,7 @@ export default function ReviewQuestionsPage() {
                   disabled={!selectedTopic || subtopics.length === 0}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-50 disabled:text-gray-400"
                 >
-                  <option value="">Select subtopic…</option>
+                  <option value="">{selectedTopic ? 'All subtopics' : 'Select subtopic…'}</option>
                   {subtopics.map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -307,6 +417,7 @@ export default function ReviewQuestionsPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Questions */}
         <div className="bg-white shadow-sm rounded-lg p-6">
@@ -324,19 +435,22 @@ export default function ReviewQuestionsPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600 mb-3" />
               <p className="text-sm text-gray-500">Loading questions…</p>
             </div>
-          ) : !selectedSubtopic ? (
+          ) : viewMode === 'browse' && !selectedTopic ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <svg className="mx-auto h-10 w-10 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              <p className="text-sm font-medium text-gray-500">Select a category, topic and subtopic to view questions</p>
+              <p className="text-sm font-medium text-gray-500">Select a category and topic to view questions</p>
+              <p className="text-xs text-gray-400 mt-1">Optionally filter by subtopic</p>
             </div>
           ) : questions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <svg className="mx-auto h-10 w-10 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-sm font-medium text-gray-500">No questions found for this subtopic</p>
+              <p className="text-sm font-medium text-gray-500">
+                {viewMode === 'flagged' ? 'No flagged questions' : 'No questions found'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -364,6 +478,17 @@ export default function ReviewQuestionsPage() {
                             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${style.badge}`}>
                               Difficulty {q.difficulty}
                             </span>
+                            {q.flag_count && q.flag_count > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                🚩 {q.flag_count}
+                              </span>
+                            )}
+                            {/* Show subtopic context when viewing all in a topic or flagged mode */}
+                            {((!selectedSubtopic && selectedTopic) || viewMode === 'flagged') && q.subtopic && (
+                              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                                {viewMode === 'flagged' && q.category ? `${q.category} › ` : ''}{q.topic ? `${q.topic} › ` : ''}{q.subtopic}
+                              </span>
+                            )}
                             {justSaved && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                                 ✓ Saved

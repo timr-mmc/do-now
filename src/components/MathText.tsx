@@ -81,15 +81,16 @@ export default function MathText({ text, className = '' }: MathTextProps) {
           container.appendChild(div);
         } else {
           // Process inline math in this text part
-          const inlineRegex = /\$(.*?)\$/g;
+          // [^$\\] matches any char except $ and \; \\. matches \ followed by any char (e.g. \$, \frac)
+          const inlineRegex = /(?<!\\)\$((?:[^$\\]|\\.)*?)(?<!\\)\$/g;
           let inlineMatch;
           let inlineLastIndex = 0;
           
           while ((inlineMatch = inlineRegex.exec(part.content)) !== null) {
-            // Add text before inline math
+            // Add text before inline math (unescape \$ → $)
             if (inlineMatch.index > inlineLastIndex) {
               const textNode = document.createTextNode(
-                part.content.substring(inlineLastIndex, inlineMatch.index)
+                part.content.substring(inlineLastIndex, inlineMatch.index).replace(/\\\$/g, '$')
               );
               container.appendChild(textNode);
             }
@@ -109,10 +110,10 @@ export default function MathText({ text, className = '' }: MathTextProps) {
             inlineLastIndex = inlineMatch.index + inlineMatch[0].length;
           }
           
-          // Add remaining text
+          // Add remaining text (unescape \$ → $)
           if (inlineLastIndex < part.content.length) {
             const textNode = document.createTextNode(
-              part.content.substring(inlineLastIndex)
+              part.content.substring(inlineLastIndex).replace(/\\\$/g, '$')
             );
             container.appendChild(textNode);
           }

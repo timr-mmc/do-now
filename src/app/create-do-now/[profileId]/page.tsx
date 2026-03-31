@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -20,6 +20,7 @@ type Question = {
   question_text: string
   answer: string
   bank_id: string
+  difficulty?: number
   diagram_data?: DiagramData | null
 }
 
@@ -68,6 +69,9 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   const [showAnswers, setShowAnswers] = useState(false)
   const [sessionTitle, setSessionTitle] = useState<string>('')
   const [refreshKey, setRefreshKey] = useState(0) // For forcing re-render of random questions
+  const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([1, 2, 3, 4, 5])
+  const [difficultyOpen, setDifficultyOpen] = useState(false)
+  const difficultyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     async function init() {
@@ -90,6 +94,17 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
       await loadQuestionBanks(sessionId)
     }
     init()
+  }, [])
+
+  // Close difficulty dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (difficultyRef.current && !difficultyRef.current.contains(e.target as Node)) {
+        setDifficultyOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   // localStorage cache utilities
@@ -362,7 +377,9 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   }
 
   function getRandomQuestions(bankId: string, count: number = 4): Question[] {
-    const questions = getQuestionsForBank(bankId)
+    const questions = getQuestionsForBank(bankId).filter(q =>
+      selectedDifficulties.length === 0 || selectedDifficulties.includes(q.difficulty ?? 1)
+    )
     if (questions.length <= count) {
       return questions // If 4 or fewer, return all
     }
@@ -586,6 +603,52 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                   Refresh All
                 </button>
               )}
+              {/* Difficulty Filter */}
+              <div className="relative" ref={difficultyRef}>
+                <button
+                  onClick={() => setDifficultyOpen(prev => !prev)}
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <span>Difficulty:</span>
+                  <span className="font-semibold text-indigo-600">
+                    {selectedDifficulties.length === 5 ? 'All' : selectedDifficulties.length === 0 ? 'None' : selectedDifficulties.map(d => `L${d}`).join(', ')}
+                  </span>
+                  <svg className={`h-4 w-4 text-gray-500 transition-transform ${difficultyOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {difficultyOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-xl border border-gray-200 bg-white shadow-lg p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Difficulty</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setSelectedDifficulties([1, 2, 3, 4, 5])} className="text-xs text-indigo-600 hover:underline">All</button>
+                        <button onClick={() => setSelectedDifficulties([])} className="text-xs text-gray-400 hover:underline">None</button>
+                      </div>
+                    </div>
+                    {[
+                      { level: 1, label: 'Level 1', stars: '★' },
+                      { level: 2, label: 'Level 2', stars: '★★' },
+                      { level: 3, label: 'Level 3', stars: '★★★' },
+                      { level: 4, label: 'Level 4', stars: '★★★★' },
+                      { level: 5, label: 'Level 5', stars: '★★★★★' },
+                    ].map(({ level, label, stars }) => (
+                      <label key={level} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={selectedDifficulties.includes(level)}
+                          onChange={() => setSelectedDifficulties(prev =>
+                            prev.includes(level) ? prev.filter(d => d !== level) : [...prev, level].sort((a, b) => a - b)
+                          )}
+                          className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-700">{label}</span>
+                        <span className="ml-auto text-xs text-amber-400">{stars}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => setShowAnswers(!showAnswers)}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -647,6 +710,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {slots.map((slot) => {
               const categoryStyle = slot.category ? CATEGORY_STYLES[slot.category] : null
+              const slotRandomQuestions = slot.bankId && !slot.question ? getRandomQuestions(slot.bankId, 4) : []
 
               return (
                 <div
@@ -814,8 +878,20 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                             <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
                             <p className="text-sm font-medium text-indigo-700">Loading questions...</p>
                           </div>
-                        ) : getQuestionsForBank(slot.bankId).length > 0 ? (
-                          getRandomQuestions(slot.bankId, 4).map((q) => (
+                        ) : getQuestionsForBank(slot.bankId).length === 0 ? (
+                          <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
+                            <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
+                            <p className="text-xs text-gray-500">
+                              Add questions to this topic in your Supabase database
+                            </p>
+                          </div>
+                        ) : slotRandomQuestions.length === 0 ? (
+                          <div className="rounded-lg border-2 border-dashed border-amber-200 bg-amber-50 p-4 text-center">
+                            <p className="text-sm font-medium text-amber-700">No questions at selected levels</p>
+                            <p className="mt-1 text-xs text-amber-600">Try selecting more difficulty levels above</p>
+                          </div>
+                        ) : (
+                          slotRandomQuestions.map((q) => (
                             <button
                               key={q.id}
                               onClick={() => updateSlot(slot.slotNumber, { question: q })}
@@ -825,13 +901,6 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                               <MathText text={q.question_text} className="text-xs text-gray-900" />
                             </button>
                           ))
-                        ) : (
-                          <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
-                            <p className="mb-2 text-sm font-medium text-gray-700">No questions available yet</p>
-                            <p className="text-xs text-gray-500">
-                              Add questions to this topic in your Supabase database
-                            </p>
-                          </div>
                         )}
                       </div>
                     </div>
