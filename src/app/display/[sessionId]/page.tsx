@@ -41,7 +41,7 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
   const [timerRunning, setTimerRunning] = useState(false)
   const [focusedQuestionId, setFocusedQuestionId] = useState<string | null>(null)
   const [questionResults, setQuestionResults] = useState<Record<string, number>>({})
-  const [savingResults, setSavingResults] = useState(false)
+  const [savingResults, setSavingResults] = useState<Record<string, boolean>>({})
   const [showSummaryModal, setShowSummaryModal] = useState(false)
   const [summaryStats, setSummaryStats] = useState<{ avgAccuracy: number; questionsRecorded: number }>({ avgAccuracy: 0, questionsRecorded: 0 })
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
@@ -152,38 +152,38 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
       ...prev,
       [questionId]: proportion
     }))
+    // Auto-save immediately if user is logged in
+    if (session?.profile_id) {
+      autoSaveResult(questionId, proportion)
+    }
+  }
+
+  async function autoSaveResult(questionId: string, proportion: number) {
+    setSavingResults(prev => ({ ...prev, [questionId]: true }))
+    try {
+      await supabase
+        .from('session_questions')
+        .update({
+          proportion_correct: proportion,
+          recorded_at: new Date().toISOString()
+        })
+        .eq('id', questionId)
+    } catch (error) {
+      console.error('Error saving result:', error)
+    } finally {
+      setSavingResults(prev => ({ ...prev, [questionId]: false }))
+    }
   }
 
   async function saveResults() {
-    setSavingResults(true)
-    
-    try {
-      // Save each question's result
-      for (const [questionId, proportion] of Object.entries(questionResults)) {
-        await supabase
-          .from('session_questions')
-          .update({ 
-            proportion_correct: proportion,
-            recorded_at: new Date().toISOString()
-          })
-          .eq('id', questionId)
-      }
-      
-      // Calculate summary stats
-      const values = Object.values(questionResults)
-      const avgAccuracy = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
-      
-      setSummaryStats({
-        avgAccuracy,
-        questionsRecorded: values.length
-      })
-      setShowSummaryModal(true)
-    } catch (error) {
-      console.error('Error saving results:', error)
-      alert('Failed to save results')
-    } finally {
-      setSavingResults(false)
-    }
+    // Compute and show summary from already-saved results
+    const values = Object.values(questionResults)
+    const avgAccuracy = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
+    setSummaryStats({
+      avgAccuracy,
+      questionsRecorded: values.length
+    })
+    setShowSummaryModal(true)
   }
 
   async function toggleAnswers() {
@@ -270,9 +270,10 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
 
       {/* Sidebar */}
       <div
-        className={`fixed left-0 top-0 z-30 h-full w-80 transform bg-white shadow-2xl transition-transform ${
+        className={`fixed left-0 top-0 z-30 h-full transform bg-white shadow-2xl transition-transform ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{ width: 'var(--sidebar-width)' }}
       >
         <div className="flex h-full flex-col p-6">
           <h2 className="mb-2 text-2xl font-bold text-gray-900">Controls</h2>
@@ -363,15 +364,14 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
             </button>
           </div>
 
-          {/* Save Results Button - Only for logged-in users */}
+          {/* View Summary Button - Only for logged-in users */}
           {session?.profile_id && showAnswers && Object.keys(questionResults).length > 0 && (
             <div className="mb-6">
               <button
                 onClick={saveResults}
-                disabled={savingResults}
-                className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition-colors hover:bg-indigo-700"
               >
-                {savingResults ? 'Saving...' : '💾 Save All Results'}
+                📊 View Summary
               </button>
             </div>
           )}
@@ -450,9 +450,8 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
 
       {/* Main Content */}
       <div 
-        className={`flex-1 overflow-auto bg-white px-8 py-4 transition-all duration-300 ${
-          sidebarOpen ? 'ml-80' : 'ml-0'
-        }`}
+        className="flex-1 overflow-auto bg-white px-8 py-4 transition-all duration-300"
+        style={{ marginLeft: sidebarOpen ? 'var(--sidebar-width)' : '0' }}
       >
         <div className="mx-auto w-full px-4">
           {/* Title and Fullscreen Button */}
@@ -510,7 +509,6 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
                 )}
 
                 {/* Discrete Control Buttons */}
-                {!showAnswers && (
                 <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     onClick={() => flagQuestion(sq.question_id)}
@@ -550,7 +548,6 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
                     )}
                   </button>
                 </div>
-                )}
 
                 {/* Question Content - Left aligned, vertically centered */}
                 <div className="flex flex-1 items-center p-10 pt-16">
@@ -572,13 +569,15 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
                     {/* Results Recording Scale - Compact version below answer */}
                     {showAnswers && (
                       <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-gray-600">Record:</span>
+                        <span className="mb-1 block text-xs font-medium text-gray-600">
+                          Record:{savingResults[sq.id] ? ' saving…' : questionResults[sq.id] !== undefined ? ' ✓ saved' : ''}
+                        </span>
+                        <div className="grid grid-cols-6 gap-1">
                           {[0, 20, 40, 60, 80, 100].map((value) => (
                             <button
                               key={value}
                               onClick={() => updateQuestionResult(sq.id, value)}
-                              className={`flex-1 rounded px-3 py-1 text-xs font-medium transition-all ${
+                              className={`rounded px-1 py-1 text-xs font-medium transition-all ${
                                 questionResults[sq.id] === value
                                   ? 'bg-indigo-600 text-white shadow ring-1 ring-indigo-400'
                                   : 'bg-white text-gray-700 hover:bg-gray-100'

@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --sidebar-width: clamp(240px, 20vw, 380px);
 }
 
 @theme inline {

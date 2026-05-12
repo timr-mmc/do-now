@@ -95,6 +95,8 @@ interface GeometryDiagramProps {
 export default function GeometryDiagram({ data, className = '' }: GeometryDiagramProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const jsxGraphRef = useRef<HTMLDivElement>(null);
+  // Stable ID generated once per component instance — avoids JSXGraph board re-init on every render
+  const jsxGraphId = useRef(`jxgbox-${Math.random().toString(36).substr(2, 9)}`);
   
   // Determine if this diagram type uses JSXGraph
   const isAngleDiagram = data && ['anglesOnLine', 'triangleAngles', 'parallelLinesTransversal', 'verticallyOpposite', 'anglesAtPoint', 'circleTheorem'].includes(data.type);  // circleTheorem uses JSXGraph
@@ -118,7 +120,7 @@ export default function GeometryDiagram({ data, className = '' }: GeometryDiagra
       {isAngleDiagram ? (
         <div 
           ref={jsxGraphRef}
-          id={`jxgbox-${Math.random().toString(36).substr(2, 9)}`}
+          id={jsxGraphId.current}
           className="border border-gray-200 rounded bg-white geometry-diagram-container w-[480px] h-[320px]"
         />
       ) : (
@@ -582,9 +584,89 @@ function drawAnglesAtPointJSX(board: any, data: DiagramData) {
   }
 }
 
+/**
+ * Computes a scale that makes the shape fill most of the SVG canvas without overflow.
+ * Only used when data.scale is undefined (not explicitly set by the author).
+ * Each case mirrors the hardcoded start/center positions in the drawing functions.
+ */
+function computeAutoScale(data: DiagramData): number {
+  const { type, dimensions: d } = data;
+
+  switch (type) {
+    case 'rectangle': {
+      const w = d.width || 120; const h = d.height || 70;
+      // drawRectangle: centered at (150,125), extents w×h
+      return Math.min(240 / w, 180 / h) * 0.85;
+    }
+    case 'square': {
+      const s = d.side || d.width || 90;
+      return Math.min(200 / s, 200 / s) * 0.85;
+    }
+    case 'triangle':
+    case 'isoscelesTriangle': {
+      const b = d.base || d.width || 100; const h = d.height || 80;
+      // drawTriangle/drawIsoscelesTriangle: baseY=200, centered x=150
+      // extents: base wide, height tall (upward from 200)
+      return Math.min(240 / b, 165 / h) * 0.85;
+    }
+    case 'equilateralTriangle': {
+      const s = d.side || 100; const h = s * Math.sqrt(3) / 2;
+      return Math.min(240 / s, 165 / h) * 0.85;
+    }
+    case 'rightTriangle': {
+      const w = d.width || 80; const h = d.height || 60;
+      // drawRightTriangle: startX=100, startY=180 → right to 100+w*s, up to 180-h*s
+      return Math.min(170 / w, 150 / h) * 0.85;
+    }
+    case 'circle': {
+      const r = d.radius || 50;
+      // drawCircle: centered at (150,125), radius r*scale
+      return Math.min(110 / r, 100 / r) * 0.85;
+    }
+    case 'semicircle': {
+      const r = d.radius || 60;
+      return Math.min(110 / r, 120 / r) * 0.85;
+    }
+    case 'cylinder': {
+      const r = d.radius || 40; const h = d.height || 80;
+      // drawCylinder: cx=150, topY=80, extends ±r wide, h+r*0.3 down
+      return Math.min(100 / r, 155 / (h + r * 0.3)) * 0.85;
+    }
+    case 'cuboid': {
+      const w = d.width || 80; const h = d.height || 60;
+      const depth = d.depth || d.length || w;
+      const offset = depth * 0.5;
+      // startX=100, startY=170; extents: (w+offset) wide, (h+offset) tall
+      return Math.min(170 / (w + offset), 140 / (h + offset)) * 0.85;
+    }
+    case 'cube': {
+      const s = d.side || 80; const offset = s * 0.5;
+      return Math.min(170 / (s + offset), 140 / (s + offset)) * 0.85;
+    }
+    case 'parallelogram': {
+      const b = d.base || 100; const h = d.height || 60; const sl = d.slant || 80;
+      const rawOffset = sl * sl - h * h;
+      const offset = rawOffset > 0 ? Math.sqrt(rawOffset) : 0;
+      return Math.min(160 / (b + offset), 150 / h) * 0.85;
+    }
+    case 'trapezoid':
+    case 'trapezium': {
+      const bb = d.bottomBase || 100; const h = d.height || 50;
+      return Math.min(220 / bb, 150 / h) * 0.85;
+    }
+    case 'kite': {
+      const d1 = d.diagonal1 || 100; const d2 = d.diagonal2 || 60;
+      return Math.min(200 / d1, 200 / d2) * 0.85;
+    }
+    default:
+      return 1;
+  }
+}
+
 // SVG rendering function for measurement shapes
 function renderWithSVG(svg: SVGSVGElement, data: DiagramData) {
-  const scale = data.scale || 1;
+  // Use explicit scale if provided; otherwise auto-compute to fit canvas
+  const scale = data.scale !== undefined ? data.scale : computeAutoScale(data);
   const defaultStyle = {
     fill: 'none',
     stroke: '#1f2937',

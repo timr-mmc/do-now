@@ -5,8 +5,10 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import MathText from '@/components/MathText'
 import { createClient } from '@/utils/supabase/client'
+import type { DiagramData } from '@/components/GeometryDiagram'
 
 const GeometryDiagram = dynamic(() => import('@/components/GeometryDiagram'), { ssr: false })
+const DiagramBuilder = dynamic(() => import('@/components/DiagramBuilder'), { ssr: false })
 
 type Question = {
   id: string
@@ -27,6 +29,8 @@ type EditDraft = {
   answer: string
   hint: string
   difficulty: number
+  diagram_data: DiagramData | null
+  editDiagram: boolean
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; border: string; text: string; badge: string; hover: string; activeBg: string; activeBorder: string }> = {
@@ -216,7 +220,7 @@ export default function ReviewQuestionsPage() {
 
   function startEdit(q: Question) {
     setEditingId(q.id)
-    setEditDraft({ question_text: q.question_text, answer: q.answer, hint: q.hint ?? '', difficulty: q.difficulty })
+    setEditDraft({ question_text: q.question_text, answer: q.answer, hint: q.hint ?? '', difficulty: q.difficulty, diagram_data: q.diagram_data ?? null, editDiagram: false })
     setSaveError(null)
     setSaveSuccessId(null)
   }
@@ -238,6 +242,7 @@ export default function ReviewQuestionsPage() {
         answer: editDraft.answer.trim(),
         hint: editDraft.hint.trim() || null,
         difficulty: editDraft.difficulty,
+        diagram_data: editDraft.diagram_data,
       })
       .eq('id', id)
       .select()
@@ -250,7 +255,7 @@ export default function ReviewQuestionsPage() {
       setQuestions(prev =>
         prev.map(q =>
           q.id === id
-            ? { ...q, question_text: editDraft.question_text.trim(), answer: editDraft.answer.trim(), hint: editDraft.hint.trim() || null, difficulty: editDraft.difficulty }
+            ? { ...q, question_text: editDraft.question_text.trim(), answer: editDraft.answer.trim(), hint: editDraft.hint.trim() || null, difficulty: editDraft.difficulty, diagram_data: editDraft.diagram_data }
             : q
         )
       )
@@ -601,6 +606,36 @@ export default function ReviewQuestionsPage() {
                               </select>
                             </div>
 
+                            {/* Diagram */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <label className="text-xs font-medium text-gray-700">Diagram</label>
+                                <button
+                                  onClick={() => setEditDraft({ ...editDraft, editDiagram: !editDraft.editDiagram })}
+                                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${editDraft.editDiagram ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                                >
+                                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${editDraft.editDiagram ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                </button>
+                                <span className="text-xs text-gray-400">{editDraft.editDiagram ? 'Editing diagram' : editDraft.diagram_data ? 'Has diagram (toggle to edit)' : 'No diagram'}</span>
+                                {editDraft.editDiagram && editDraft.diagram_data && (
+                                  <button
+                                    onClick={() => setEditDraft({ ...editDraft, diagram_data: null })}
+                                    className="ml-auto text-xs text-red-500 hover:text-red-700"
+                                  >
+                                    Remove diagram
+                                  </button>
+                                )}
+                              </div>
+                              {editDraft.editDiagram && (
+                                <div className="rounded-lg border border-gray-200 p-3">
+                                  <DiagramBuilder
+                                    initialData={editDraft.diagram_data ?? undefined}
+                                    onChange={d => setEditDraft({ ...editDraft, diagram_data: d })}
+                                  />
+                                </div>
+                              )}
+                            </div>
+
                             {/* Error message */}
                             {saveError && (
                               <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2">
@@ -641,9 +676,9 @@ export default function ReviewQuestionsPage() {
                                   Difficulty {editDraft.difficulty}
                                 </span>
                               </div>
-                              {q.diagram_data && (
+                              {editDraft.diagram_data && (
                                 <div className="mb-3 flex justify-center">
-                                  <GeometryDiagram data={q.diagram_data} />
+                                  <GeometryDiagram data={editDraft.diagram_data} />
                                 </div>
                               )}
                               <MathText

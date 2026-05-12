@@ -56,8 +56,60 @@ export function validateDiagram(data: DiagramData | null | undefined): Validatio
     case 'anglesAtPoint':
       validateAnglesAtPoint(data, result);
       break;
+    case 'rectangle':
+      validateRectangle(data, result);
+      break;
+    case 'square':
+      validateSquare(data, result);
+      break;
+    case 'triangle':
+    case 'isoscelesTriangle':
+      validateIsoscelesTriangle(data, result);
+      break;
+    case 'equilateralTriangle':
+      validateEquilateralTriangle(data, result);
+      break;
+    case 'rightTriangle':
+      validateRightTriangle(data, result);
+      break;
+    case 'circle':
+      validateCircle(data, result);
+      break;
+    case 'semicircle':
+      validateSemicircle(data, result);
+      break;
+    case 'cylinder':
+      validateCylinder(data, result);
+      break;
+    case 'cuboid':
+      validateCuboid(data, result);
+      break;
+    case 'cube':
+      validateCube(data, result);
+      break;
+    case 'parallelogram':
+      validateParallelogram(data, result);
+      break;
+    case 'trapezoid':
+    case 'trapezium':
+      validateTrapezoid(data, result);
+      break;
+    case 'kite':
+      validateKite(data, result);
+      break;
+    case 'triangularPrism':
+      validateTriangularPrism(data, result);
+      break;
+    case 'pyramid':
+      validatePyramid(data, result);
+      break;
+    case 'regularPolygon':
+      validateRegularPolygon(data, result);
+      break;
+    case 'circleTheorem':
+      validateCircleTheorem(data, result);
+      break;
     default:
-      // SVG-based diagrams (triangle, rectangle, etc.) have their own bounds
       result.warnings.push(`Validation not implemented for diagram type: ${data.type}`);
   }
 
@@ -219,6 +271,147 @@ function validateAnglesAtPoint(data: DiagramData, result: ValidationResult): voi
  */
 function isWithinBounds(x: number, y: number): boolean {
   return x >= BOUNDS.minX && x <= BOUNDS.maxX && y >= BOUNDS.minY && y <= BOUNDS.maxY;
+}
+
+// ─── SVG Shape Validators ────────────────────────────────────────────────────
+
+function validateRectangle(data: DiagramData, result: ValidationResult): void {
+  const { width, height } = data.dimensions;
+  if (!width || width <= 0) { result.valid = false; result.errors.push('Rectangle width must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Rectangle height must be a positive number'); }
+}
+
+function validateSquare(data: DiagramData, result: ValidationResult): void {
+  const s = data.dimensions.side || data.dimensions.width;
+  if (!s || s <= 0) { result.valid = false; result.errors.push('Square side must be a positive number'); }
+}
+
+function validateIsoscelesTriangle(data: DiagramData, result: ValidationResult): void {
+  const base = data.dimensions.base || data.dimensions.width;
+  const height = data.dimensions.height;
+  if (!base || base <= 0) { result.valid = false; result.errors.push('Triangle base must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Triangle height must be a positive number'); }
+}
+
+function validateEquilateralTriangle(data: DiagramData, result: ValidationResult): void {
+  const s = data.dimensions.side;
+  if (!s || s <= 0) { result.valid = false; result.errors.push('Equilateral triangle side must be a positive number'); }
+}
+
+function validateRightTriangle(data: DiagramData, result: ValidationResult): void {
+  const { width, height, side1, side2, side3 } = data.dimensions;
+  // width/height = the two legs
+  const a = side1 || width;
+  const b = side2 || height;
+  const c = side3; // hypotenuse, optional
+  if (!a || a <= 0) { result.valid = false; result.errors.push('Right triangle leg (width/side1) must be a positive number'); }
+  if (!b || b <= 0) { result.valid = false; result.errors.push('Right triangle leg (height/side2) must be a positive number'); }
+  if (c !== undefined && a && b) {
+    const expected = Math.sqrt(a * a + b * b);
+    if (Math.abs(c - expected) > 0.1) {
+      result.valid = false;
+      result.errors.push(`Hypotenuse ${c} doesn't satisfy Pythagoras: expected ${expected.toFixed(2)} for legs ${a} and ${b}`);
+    }
+  }
+}
+
+function validateCircle(data: DiagramData, result: ValidationResult): void {
+  const { radius } = data.dimensions;
+  if (!radius || radius <= 0) { result.valid = false; result.errors.push('Circle radius must be a positive number'); }
+}
+
+function validateSemicircle(data: DiagramData, result: ValidationResult): void {
+  const { radius } = data.dimensions;
+  if (!radius || radius <= 0) { result.valid = false; result.errors.push('Semicircle radius must be a positive number'); }
+}
+
+function validateCylinder(data: DiagramData, result: ValidationResult): void {
+  const { radius, height } = data.dimensions;
+  if (!radius || radius <= 0) { result.valid = false; result.errors.push('Cylinder radius must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Cylinder height must be a positive number'); }
+}
+
+function validateCuboid(data: DiagramData, result: ValidationResult): void {
+  const { width, height } = data.dimensions;
+  const depth = data.dimensions.depth || data.dimensions.length;
+  if (!width || width <= 0) { result.valid = false; result.errors.push('Cuboid width must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Cuboid height must be a positive number'); }
+  if (depth !== undefined && depth <= 0) { result.valid = false; result.errors.push('Cuboid depth must be a positive number'); }
+}
+
+function validateCube(data: DiagramData, result: ValidationResult): void {
+  const s = data.dimensions.side;
+  if (!s || s <= 0) { result.valid = false; result.errors.push('Cube side must be a positive number'); }
+}
+
+function validateParallelogram(data: DiagramData, result: ValidationResult): void {
+  const { base, height, slant } = data.dimensions;
+  if (!base || base <= 0) { result.valid = false; result.errors.push('Parallelogram base must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Parallelogram height must be a positive number'); }
+  if (slant !== undefined) {
+    if (slant <= 0) { result.valid = false; result.errors.push('Parallelogram slant must be positive'); }
+    else if (height && slant <= height) {
+      result.valid = false;
+      result.errors.push(`Parallelogram slant (${slant}) must be greater than height (${height})`);
+    }
+  }
+}
+
+function validateTrapezoid(data: DiagramData, result: ValidationResult): void {
+  const { bottomBase, topBase, height } = data.dimensions;
+  if (!bottomBase || bottomBase <= 0) { result.valid = false; result.errors.push('Trapezoid bottom base must be a positive number'); }
+  if (!topBase || topBase <= 0) { result.valid = false; result.errors.push('Trapezoid top base must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Trapezoid height must be a positive number'); }
+  if (topBase && bottomBase && topBase >= bottomBase) {
+    result.warnings.push(`Top base (${topBase}) is not smaller than bottom base (${bottomBase}) — verify this is intentional`);
+  }
+}
+
+function validateKite(data: DiagramData, result: ValidationResult): void {
+  const { diagonal1, diagonal2 } = data.dimensions;
+  if (!diagonal1 || diagonal1 <= 0) { result.valid = false; result.errors.push('Kite diagonal1 (vertical) must be a positive number'); }
+  if (!diagonal2 || diagonal2 <= 0) { result.valid = false; result.errors.push('Kite diagonal2 (horizontal) must be a positive number'); }
+}
+
+function validateTriangularPrism(data: DiagramData, result: ValidationResult): void {
+  const { triangleBase, triangleHeight, length } = data.dimensions;
+  if (!triangleBase || triangleBase <= 0) { result.valid = false; result.errors.push('Triangular prism triangleBase must be a positive number'); }
+  if (!triangleHeight || triangleHeight <= 0) { result.valid = false; result.errors.push('Triangular prism triangleHeight must be a positive number'); }
+  if (!length || length <= 0) { result.valid = false; result.errors.push('Triangular prism length must be a positive number'); }
+}
+
+function validatePyramid(data: DiagramData, result: ValidationResult): void {
+  const { base, height } = data.dimensions;
+  if (!base || base <= 0) { result.valid = false; result.errors.push('Pyramid base must be a positive number'); }
+  if (!height || height <= 0) { result.valid = false; result.errors.push('Pyramid height must be a positive number'); }
+}
+
+function validateRegularPolygon(data: DiagramData, result: ValidationResult): void {
+  const { sides, side, radius } = data.dimensions;
+  if (!sides || sides < 3) { result.valid = false; result.errors.push('Regular polygon must have at least 3 sides'); }
+  if (!side && !radius) { result.warnings.push('Regular polygon: provide either side length or radius for accurate labelling'); }
+}
+
+function validateCircleTheorem(data: DiagramData, result: ValidationResult): void {
+  const validTypes = ['angleInSemicircle', 'anglesInSameSegment', 'angleCentreCircumference', 'cyclicQuadrilateral', 'tangentRadius'];
+  const { theoremType, angle1, angle2 } = data.dimensions;
+  if (!theoremType) {
+    result.valid = false;
+    result.errors.push(`circleTheorem requires a theoremType. Valid options: ${validTypes.join(', ')}`);
+  } else if (!validTypes.includes(theoremType)) {
+    result.valid = false;
+    result.errors.push(`Unknown theoremType "${theoremType}". Valid options: ${validTypes.join(', ')}`);
+  }
+  if (theoremType === 'angleCentreCircumference' && angle1 !== undefined && angle2 !== undefined) {
+    if (Math.abs(angle1 - 2 * angle2) > 1) {
+      result.warnings.push(`Centre angle (${angle1}°) should be twice the circumference angle (${angle2}°) for angleCentreCircumference`);
+    }
+  }
+  if (theoremType === 'anglesInSameSegment' && angle1 !== undefined && angle2 !== undefined) {
+    if (Math.abs(angle1 - angle2) > 1) {
+      result.warnings.push(`Angles in same segment should be equal: got ${angle1}° and ${angle2}°`);
+    }
+  }
 }
 
 /**
