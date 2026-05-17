@@ -64,6 +64,15 @@ export default function MathText({ text, className = '' }: MathTextProps) {
         displayParts.push({ index: 0, content: text, isDisplay: false });
       }
 
+      // Helper: append plain text to container, inserting <br> elements for newlines
+      function appendText(parent: HTMLElement, str: string) {
+        const lines = str.split('\n');
+        lines.forEach((line, i) => {
+          parent.appendChild(document.createTextNode(line));
+          if (i < lines.length - 1) parent.appendChild(document.createElement('br'));
+        });
+      }
+
       // Now process each part for inline math
       for (const part of displayParts) {
         if (part.isDisplay) {
@@ -89,10 +98,7 @@ export default function MathText({ text, className = '' }: MathTextProps) {
           while ((inlineMatch = inlineRegex.exec(part.content)) !== null) {
             // Add text before inline math (unescape \$ → $)
             if (inlineMatch.index > inlineLastIndex) {
-              const textNode = document.createTextNode(
-                part.content.substring(inlineLastIndex, inlineMatch.index).replace(/\\\$/g, '$')
-              );
-              container.appendChild(textNode);
+              appendText(container, part.content.substring(inlineLastIndex, inlineMatch.index).replace(/\\\$/g, '$'));
             }
             
             // Render inline math
@@ -112,10 +118,7 @@ export default function MathText({ text, className = '' }: MathTextProps) {
           
           // Add remaining text (unescape \$ → $)
           if (inlineLastIndex < part.content.length) {
-            const textNode = document.createTextNode(
-              part.content.substring(inlineLastIndex).replace(/\\\$/g, '$')
-            );
-            container.appendChild(textNode);
+            appendText(container, part.content.substring(inlineLastIndex).replace(/\\\$/g, '$'));
           }
         }
       }
