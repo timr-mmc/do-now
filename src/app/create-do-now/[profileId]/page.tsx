@@ -41,6 +41,7 @@ const CATEGORY_STYLES: Record<string, { bg: string; border: string; text: string
   'Geometry': { bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-700', hover: 'hover:bg-orange-200' },
   'Statistics': { bg: 'bg-pink-100', border: 'border-pink-400', text: 'text-pink-700', hover: 'hover:bg-pink-200' },
   'Probability': { bg: 'bg-teal-100', border: 'border-teal-400', text: 'text-teal-700', hover: 'hover:bg-teal-200' },
+  'My Own Questions': { bg: 'bg-indigo-100', border: 'border-indigo-400', text: 'text-indigo-700', hover: 'hover:bg-indigo-200' },
 }
 
 export default function CreateDoNowPage({ params }: { params: Promise<{ profileId: string }> | { profileId: string } }) {
@@ -73,6 +74,14 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   const [difficultyOpen, setDifficultyOpen] = useState(false)
   const difficultyRef = useRef<HTMLDivElement>(null)
 
+  // Write My Own state
+  const [savedCustomQuestions, setSavedCustomQuestions] = useState<Question[]>([])
+  const [writeOwnMode, setWriteOwnMode] = useState<Record<number, boolean>>({})
+  const [writeOwnData, setWriteOwnData] = useState<Record<number, { text: string; answer: string }>>({})
+  const [showMathHelp, setShowMathHelp] = useState<number | null>(null)
+  const [savingCustom, setSavingCustom] = useState<number | null>(null)
+  const mathHelpRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     async function init() {
       const resolvedParams = await Promise.resolve(params)
@@ -83,6 +92,15 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
       if (user) {
         setUserEmail(user.email || '')
         setUserId(user.id)
+
+        // Load user's saved custom questions
+        const { data: customQuestionsData } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('is_custom', true)
+          .eq('created_by', user.id)
+          .order('created_at', { ascending: false })
+        if (customQuestionsData) setSavedCustomQuestions(customQuestionsData)
       }
       
       // Check if we're editing an existing session
@@ -483,6 +501,95 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
     setLoading(false)
   }
 
+  // Get or create the shared "My Questions" question bank (used for teacher-written questions)
+  async function ensureCustomBank(): Promise<string | null> {
+    // Check already-loaded banks first
+    const existing = banks.find(b => b.category === 'My Questions')
+    if (existing) return existing.id
+
+    // Try to create it (shared bank for all user-written questions)
+    const { data: newBank, error } = await supabase
+      .from('question_banks')
+      .insert({ category: 'My Questions', topic: 'Custom', subtopic: 'Custom', description: 'Teacher-written custom questions' })
+      .select()
+      .single()
+
+    if (newBank) {
+      setBanks(prev => [...prev, newBank])
+      return newBank.id
+    }
+
+    // INSERT failed (likely unique constraint - another user created it first) — re-query
+    if (error) {
+      const { data: found } = await supabase
+        .from('question_banks')
+        .select('id, category, topic, subtopic, description')
+        .eq('category', 'My Questions')
+        .eq('topic', 'Custom')
+        .maybeSingle()
+
+      if (found) {
+        setBanks(prev => [...prev, found])
+        return found.id
+      }
+    }
+
+    return null
+  }
+
+  // Save a teacher-written question to the DB and use it in the given slot
+  async function handleUseOwnQuestion(slotNumber: number) {
+    const data = writeOwnData[slotNumber]
+    if (!data?.text?.trim() || !data?.answer?.trim()) return
+
+    setSavingCustom(slotNumber)
+
+    try {
+      const bankId = await ensureCustomBank()
+      if (!bankId) {
+        alert('Failed to set up your question bank. Please try again.')
+        return
+      }
+
+      const { data: newQuestion, error } = await supabase
+        .from('questions')
+        .insert({
+          question_text: data.text.trim(),
+          answer: data.answer.trim(),
+          bank_id: bankId,
+          created_by: userId,
+          is_custom: true,
+          is_public: false,
+        })
+        .select()
+        .single()
+
+      if (error || !newQuestion) {
+        alert('Failed to save question: ' + (error?.message || 'Unknown error'))
+        return
+      }
+
+      // Add to saved questions list for "My Own Questions" panel
+      setSavedCustomQuestions(prev => [newQuestion, ...prev])
+
+      // Use the question in this slot
+      updateSlot(slotNumber, {
+        category: 'My Own Questions',
+        topic: null,
+        subtopic: null,
+        bankId: bankId,
+        question: newQuestion,
+      })
+
+      // Clear write own mode and form data for this slot
+      setWriteOwnMode(prev => ({ ...prev, [slotNumber]: false }))
+      setWriteOwnData(prev => ({ ...prev, [slotNumber]: { text: '', answer: '' } }))
+      setShowMathHelp(null)
+    } finally {
+      setSavingCustom(null)
+    }
+  }
+
   async function createSession() {
     const selectedSlots = slots.filter(s => s.question)
     
@@ -727,13 +834,17 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                     </h3>
                     {slot.question && (
                       <button
-                        onClick={() => updateSlot(slot.slotNumber, {
-                          category: null,
-                          topic: null,
-                          subtopic: null,
-                          bankId: null,
-                          question: null,
-                        })}
+                        onClick={() => {
+                          updateSlot(slot.slotNumber, {
+                            category: null,
+                            topic: null,
+                            subtopic: null,
+                            bankId: null,
+                            question: null,
+                          })
+                          setWriteOwnMode(prev => ({ ...prev, [slot.slotNumber]: false }))
+                          setShowMathHelp(null)
+                        }}
                         className="text-xs font-medium text-red-600 hover:text-red-700"
                       >
                         ✕ Clear
@@ -764,8 +875,113 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3">
+                  {/* Write My Own form — shown when writeOwnMode is active for this slot */}
+                  {writeOwnMode[slot.slotNumber] && (
+                    <div>
+                      <div className="mb-2 flex items-center justify-between">
+                        <button
+                          onClick={() => {
+                            setWriteOwnMode(prev => ({ ...prev, [slot.slotNumber]: false }))
+                            setShowMathHelp(null)
+                          }}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          ← Cancel
+                        </button>
+                        <p className="text-xs font-semibold text-gray-700">Write Your Own Question</p>
+                        {/* Math notation help button */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowMathHelp(prev => prev === slot.slotNumber ? null : slot.slotNumber)}
+                            className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-300"
+                            title="Math notation help"
+                          >
+                            ?
+                          </button>
+                          {showMathHelp === slot.slotNumber && (
+                            <div className="absolute right-0 top-6 z-50 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+                              <p className="mb-1 text-xs font-semibold text-gray-700">Math Notation Guide</p>
+                              <p className="mb-2 text-xs text-gray-500">Wrap equations in <code className="rounded bg-gray-100 px-1">$...$</code></p>
+                              <div className="space-y-1.5">
+                                {[
+                                  { input: '$\\frac{1}{2}$', desc: 'Fraction' },
+                                  { input: '$x^2$', desc: 'Power' },
+                                  { input: '$\\sqrt{x}$', desc: 'Square root' },
+                                  { input: '$3x + 5 = 14$', desc: 'Equation' },
+                                  { input: '$a^2 + b^2 = c^2$', desc: 'Formula' },
+                                ].map(({ input, desc }) => (
+                                  <div key={input} className="flex items-center gap-1.5">
+                                    <code className="rounded bg-gray-100 px-1 text-xs text-gray-700">{input}</code>
+                                    <span className="text-gray-400">→</span>
+                                    <MathText text={input} className="text-xs" />
+                                    <span className="ml-auto text-xs text-gray-400">({desc})</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs text-gray-500">Example: <code className="rounded bg-gray-100 px-1">{'Simplify $\\frac{2x}{4}$'}</code></p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Question textarea */}
+                      <div className="mb-2">
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Question:</label>
+                        <textarea
+                          value={writeOwnData[slot.slotNumber]?.text || ''}
+                          onChange={(e) => setWriteOwnData(prev => ({
+                            ...prev,
+                            [slot.slotNumber]: { text: e.target.value, answer: prev[slot.slotNumber]?.answer || '' }
+                          }))}
+                          placeholder="e.g. Simplify $\frac{2x}{4}$"
+                          className="w-full resize-none rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+                          rows={2}
+                        />
+                        {writeOwnData[slot.slotNumber]?.text && (
+                          <div className="mt-1 rounded bg-blue-50 px-2 py-1">
+                            <span className="text-xs text-gray-500">Preview: </span>
+                            <MathText text={writeOwnData[slot.slotNumber].text} className="inline text-xs text-gray-800" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Answer input */}
+                      <div className="mb-3">
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Answer:</label>
+                        <input
+                          type="text"
+                          value={writeOwnData[slot.slotNumber]?.answer || ''}
+                          onChange={(e) => setWriteOwnData(prev => ({
+                            ...prev,
+                            [slot.slotNumber]: { text: prev[slot.slotNumber]?.text || '', answer: e.target.value }
+                          }))}
+                          placeholder="e.g. $\frac{x}{2}$"
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+                        />
+                        {writeOwnData[slot.slotNumber]?.answer && (
+                          <div className="mt-1 rounded bg-green-50 px-2 py-1">
+                            <span className="text-xs text-gray-500">Answer preview: </span>
+                            <MathText text={writeOwnData[slot.slotNumber].answer} className="inline text-xs text-gray-800" />
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleUseOwnQuestion(slot.slotNumber)}
+                        disabled={
+                          !writeOwnData[slot.slotNumber]?.text?.trim() ||
+                          !writeOwnData[slot.slotNumber]?.answer?.trim() ||
+                          savingCustom === slot.slotNumber
+                        }
+                        className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {savingCustom === slot.slotNumber ? 'Saving…' : '✓ Use & Save Question'}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Step 1: Category Cards */}
-                  {!slot.category && (
+                  {!slot.category && !writeOwnMode[slot.slotNumber] && (
                     <div>
                       <p className="mb-2 text-xs font-medium text-gray-600">Select Category:</p>
                       <div className="grid grid-cols-2 gap-2">
@@ -787,12 +1003,72 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                             </button>
                           )
                         })}
+
+                        {/* My Own Questions — only show if the teacher has saved questions */}
+                        {savedCustomQuestions.length > 0 && (
+                          <button
+                            onClick={() => updateSlot(slot.slotNumber, {
+                              category: 'My Own Questions',
+                              topic: null,
+                              subtopic: null,
+                              bankId: null,
+                              question: null,
+                            })}
+                            className="rounded-lg border-2 border-indigo-400 bg-indigo-100 p-2 text-center transition-all hover:bg-indigo-200"
+                          >
+                            <div className="text-xs font-bold text-indigo-700">⭐ My Own Questions</div>
+                            <div className="mt-0.5 text-xs text-indigo-500">{savedCustomQuestions.length} saved</div>
+                          </button>
+                        )}
+
+                        {/* Write My Own — always shown */}
+                        <button
+                          onClick={() => setWriteOwnMode(prev => ({ ...prev, [slot.slotNumber]: true }))}
+                          className="rounded-lg border-2 border-dashed border-gray-400 bg-gray-50 p-2 text-center transition-all hover:bg-gray-100"
+                        >
+                          <div className="text-xs font-bold text-gray-600">✏️ Write My Own</div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* My Own Questions: show saved custom questions directly */}
+                  {slot.category === 'My Own Questions' && !slot.question && !writeOwnMode[slot.slotNumber] && (
+                    <div>
+                      <div className="mb-2 flex items-center justify-between">
+                        <button
+                          onClick={() => updateSlot(slot.slotNumber, { category: null })}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          ← Back to categories
+                        </button>
+                        <button
+                          onClick={() => setWriteOwnMode(prev => ({ ...prev, [slot.slotNumber]: true }))}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                        >
+                          + Write New
+                        </button>
+                      </div>
+                      <p className="mb-2 text-xs font-medium text-gray-600">My Saved Questions:</p>
+                      <div className="space-y-2">
+                        {savedCustomQuestions.map((q) => (
+                          <button
+                            key={q.id}
+                            onClick={() => updateSlot(slot.slotNumber, {
+                              bankId: q.bank_id,
+                              question: q,
+                            })}
+                            className="w-full rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-left transition-all hover:border-indigo-400 hover:bg-indigo-100"
+                          >
+                            <MathText text={q.question_text} className="text-xs text-gray-900" />
+                          </button>
+                        ))}
                       </div>
                     </div>
                   )}
 
                   {/* Step 2: Topic Buttons */}
-                  {slot.category && !slot.topic && (
+                  {slot.category && !slot.topic && slot.category !== 'My Own Questions' && !writeOwnMode[slot.slotNumber] && (
                     <div>
                       <button
                         onClick={() => updateSlot(slot.slotNumber, { category: null })}
@@ -821,7 +1097,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                   )}
 
                   {/* Step 3: Subtopic Chips */}
-                  {slot.category && slot.topic && !slot.subtopic && (
+                  {slot.category && slot.topic && !slot.subtopic && slot.category !== 'My Own Questions' && !writeOwnMode[slot.slotNumber] && (
                     <div>
                       <button
                         onClick={() => updateSlot(slot.slotNumber, { topic: null, subtopic: null, bankId: null, question: null })}
@@ -849,7 +1125,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                   )}
 
                   {/* Step 4: Question Cards */}
-                  {slot.bankId && !slot.question && (
+                  {slot.bankId && !slot.question && slot.category !== 'My Own Questions' && (
                     <div>
                       <div className="mb-2 flex items-center justify-between">
                         <button
@@ -910,7 +1186,14 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                   {slot.question && (
                     <div>
                       <button
-                        onClick={() => updateSlot(slot.slotNumber, { question: null })}
+                        onClick={() => {
+                          if (slot.category === 'My Own Questions') {
+                            // Go back to My Own Questions list (clear both bankId and question)
+                            updateSlot(slot.slotNumber, { bankId: null, question: null })
+                          } else {
+                            updateSlot(slot.slotNumber, { question: null })
+                          }
+                        }}
                         className="mb-2 text-xs text-gray-500 hover:text-gray-700"
                       >
                         ← Change question
