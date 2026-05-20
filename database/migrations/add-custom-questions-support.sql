@@ -9,7 +9,12 @@
 ALTER TABLE questions
   ADD COLUMN IF NOT EXISTS is_custom BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS is_saved BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS difficulty INTEGER DEFAULT 3,
+  ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+-- is_saved = TRUE  → user explicitly saved this question for re-use (shows in My Own Questions)
+-- is_saved = FALSE → question was created for a single session only (hidden from My Own Questions)
 
 -- Index for fast lookup of a user's custom questions
 CREATE INDEX IF NOT EXISTS idx_questions_custom_by_user

@@ -456,7 +456,7 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
         <div className="mx-auto w-full px-4">
           {/* Title and Fullscreen Button */}
           <div className="mb-4 flex items-center justify-center gap-4">
-            <h1 className="text-7xl font-bold text-gray-900">Do-Now</h1>
+            <h1 className="text-7xl font-bold text-gray-900">Do Now</h1>
             <button
               onClick={enterFullscreen}
               className="rounded-lg bg-gray-100 p-2 text-gray-500 opacity-50 transition-all hover:bg-gray-200 hover:opacity-100"
