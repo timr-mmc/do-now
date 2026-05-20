@@ -91,6 +91,9 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   // Per-slot tag text input buffer
   const [tagInputs, setTagInputs] = useState<Record<number, string>>({})
+  // Save-categorisation step (shown after clicking "Save & Use")
+  const [saveStep, setSaveStep] = useState<Record<number, boolean>>({})
+  const [saveStepState, setSaveStepState] = useState<Record<number, { category: string; topic: string; bankId: string; isPublic: boolean }>>({})
 
   useEffect(() => {
     async function init() {
