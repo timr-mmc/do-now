@@ -22,6 +22,10 @@ type Question = {
   topic?: string
   subtopic?: string
   flag_count?: number
+  // user-created question fields
+  is_custom?: boolean
+  is_public?: boolean
+  created_by?: string
 }
 
 type EditDraft = {
@@ -51,7 +55,9 @@ function getCategoryStyle(category: string) {
 export default function ReviewQuestionsPage() {
   const supabase = createClient()
 
-  const [viewMode, setViewMode] = useState<'browse' | 'flagged'>('browse')
+  const [viewMode, setViewMode] = useState<'browse' | 'flagged' | 'user-questions'>('browse')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [userQuestionsFilter, setUserQuestionsFilter] = useState<'all' | 'public' | 'private'>('all')
   const [categories, setCategories] = useState<string[]>([])
   const [topics, setTopics] = useState<string[]>([])
   const [subtopics, setSubtopics] = useState<string[]>([])
@@ -73,6 +79,10 @@ export default function ReviewQuestionsPage() {
   useEffect(() => {
     async function fetchCategories() {
       setLoadingFilters(true)
+      // Check admin status
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.email === 'tim.rout@gmail.com') setIsAdmin(true)
+
       const { data } = await supabase
         .from('question_banks')
         .select('category')
@@ -171,6 +181,43 @@ export default function ReviewQuestionsPage() {
     }
     fetchQuestions()
   }, [selectedCategory, selectedTopic, selectedSubtopic, supabase])
+
+  // Fetch user-created questions (admin only)
+  useEffect(() => {
+    if (viewMode !== 'user-questions') return
+    async function fetchUserQuestions() {
+      setLoading(true)
+      setQuestions([])
+      let query = supabase
+        .from('questions')
+        .select('id, question_text, answer, difficulty, hint, diagram_data, bank_id, is_custom, is_public, created_by')
+        .eq('is_custom', true)
+        .order('created_at', { ascending: false })
+      if (userQuestionsFilter === 'public') query = query.eq('is_public', true)
+      if (userQuestionsFilter === 'private') query = query.eq('is_public', false)
+      const { data: qData } = await query
+      if (qData && qData.length > 0) {
+        // Fetch bank context for categorised questions
+        const bankIds = [...new Set(qData.filter((q: any) => q.bank_id).map((q: any) => q.bank_id))]
+        const bankMap: Record<string, any> = {}
+        if (bankIds.length > 0) {
+          const { data: bankData } = await supabase
+            .from('question_banks')
+            .select('id, category, topic, subtopic')
+            .in('id', bankIds)
+          for (const b of bankData ?? []) bankMap[b.id] = b
+        }
+        setQuestions(qData.map((q: any) => ({
+          ...q,
+          category: q.bank_id ? bankMap[q.bank_id]?.category : undefined,
+          topic: q.bank_id ? bankMap[q.bank_id]?.topic : undefined,
+          subtopic: q.bank_id ? bankMap[q.bank_id]?.subtopic : undefined,
+        })))
+      }
+      setLoading(false)
+    }
+    fetchUserQuestions()
+  }, [viewMode, userQuestionsFilter, supabase])
 
   // Fetch flagged questions
   useEffect(() => {
@@ -332,6 +379,26 @@ export default function ReviewQuestionsPage() {
             </svg>
             Flagged Questions
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setViewMode('user-questions')
+                setSelectedCategory('')
+                setSelectedTopic('')
+                setSelectedSubtopic('')
+              }}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                viewMode === 'user-questions'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Teacher Questions
+            </button>
+          )}
         </div>
 
         {/* Filters — only shown in browse mode */}
@@ -424,7 +491,28 @@ export default function ReviewQuestionsPage() {
         </div>
         )}
 
-        {/* Questions */}
+        {/* User-questions filter — admin only */}
+        {viewMode === 'user-questions' && (
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 mb-6 flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-violet-700">Show:</span>
+            {(['all', 'public', 'private'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setUserQuestionsFilter(f)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors capitalize ${
+                  userQuestionsFilter === f
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {f === 'all' ? 'All teacher questions' : f === 'public' ? 'Public (shared)' : 'Private (personal only)'}
+              </button>
+            ))}
+            <span className="ml-auto text-xs text-violet-500">Editing here affects questions for all users</span>
+          </div>
+        )}
+
+        {/* Questions */}}
         <div className="bg-white shadow-sm rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium text-gray-900">Questions</h2>
@@ -454,7 +542,7 @@ export default function ReviewQuestionsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="text-sm font-medium text-gray-500">
-                {viewMode === 'flagged' ? 'No flagged questions' : 'No questions found'}
+                {viewMode === 'flagged' ? 'No flagged questions' : viewMode === 'user-questions' ? 'No teacher-created questions found' : 'No questions found'}
               </p>
             </div>
           ) : (
@@ -471,6 +559,8 @@ export default function ReviewQuestionsPage() {
                         ? 'border-indigo-300 bg-white shadow-md'
                         : justSaved
                         ? 'border-green-300 bg-green-50'
+                        : viewMode === 'user-questions'
+                        ? 'border-violet-200 bg-violet-50'
                         : `${style.bg} ${style.border}`
                     }`}
                   >
@@ -478,9 +568,9 @@ export default function ReviewQuestionsPage() {
                     {!isEditing && (
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-4 mb-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center flex-wrap gap-2">
                             <span className="text-xs font-medium text-gray-400">#{i + 1}</span>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${style.badge}`}>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${viewMode === 'user-questions' ? 'bg-gray-100 text-gray-600' : style.badge}`}>
                               Difficulty {q.difficulty}
                             </span>
                             {q.flag_count && q.flag_count > 0 && (
@@ -494,21 +584,59 @@ export default function ReviewQuestionsPage() {
                                 {viewMode === 'flagged' && q.category ? `${q.category} › ` : ''}{q.topic ? `${q.topic} › ` : ''}{q.subtopic}
                               </span>
                             )}
+                            {/* User-questions mode: show category context and public badge */}
+                            {viewMode === 'user-questions' && (
+                              <>
+                                {q.category ? (
+                                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                                    {q.category}{q.topic ? ` › ${q.topic}` : ''}{q.subtopic ? ` › ${q.subtopic}` : ''}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-medium text-amber-600">
+                                    Uncategorised
+                                  </span>
+                                )}
+                                {q.is_public ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                    🌐 Public
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                                    Private
+                                  </span>
+                                )}
+                              </>
+                            )}
                             {justSaved && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                                 ✓ Saved
                               </span>
                             )}
                           </div>
-                          <button
-                            onClick={() => startEdit(q)}
-                            className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 transition-colors"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Edit
-                          </button>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* Admin: toggle public status inline */}
+                            {viewMode === 'user-questions' && (
+                              <button
+                                onClick={async () => {
+                                  const { error } = await supabase.from('questions').update({ is_public: !q.is_public }).eq('id', q.id)
+                                  if (!error) setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, is_public: !x.is_public } : x))
+                                }}
+                                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${ q.is_public ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }`}
+                                title={q.is_public ? 'Click to make private' : 'Click to make public'}
+                              >
+                                {q.is_public ? '🌐 Make private' : '🔒 Make public'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => startEdit(q)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 transition-colors"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Edit
+                            </button>
+                          </div>
                         </div>
 
                         {/* Question as it appears on display page */}

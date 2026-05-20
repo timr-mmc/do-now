@@ -93,7 +93,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   const [tagInputs, setTagInputs] = useState<Record<number, string>>({})
   // Save-categorisation step (shown after clicking "Save & Use")
   const [saveStep, setSaveStep] = useState<Record<number, boolean>>({})
-  const [saveStepState, setSaveStepState] = useState<Record<number, { category: string; topic: string; bankId: string; isPublic: boolean }>>({})
+  const [saveStepState, setSaveStepState] = useState<Record<number, { category: string; topic: string; bankId: string; isPublic: boolean; skipped?: boolean }>>({})
 
   useEffect(() => {
     async function init() {
@@ -584,7 +584,8 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   async function handleSaveAndUseQuestion(slotNumber: number) {
     const step = saveStepState[slotNumber]
     const data = writeOwnData[slotNumber]
-    if (!step?.bankId || !data?.text?.trim() || !data?.answer?.trim()) return
+    const hasCategory = step?.skipped || !!step?.bankId
+    if (!hasCategory || !data?.text?.trim() || !data?.answer?.trim()) return
 
     setSavingCustom(slotNumber)
     try {
@@ -593,11 +594,11 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
         .insert({
           question_text: data.text.trim(),
           answer: data.answer.trim(),
-          bank_id: step.bankId,
+          bank_id: step.bankId || null,
           created_by: userId,
           is_custom: true,
           is_saved: true,
-          is_public: step.isPublic,
+          is_public: step.skipped ? false : (step.isPublic || false),
           difficulty: data.difficulty ?? 3,
           tags: data.tags ?? [],
         })
@@ -619,7 +620,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
       localStorage.removeItem('questions_cache_' + cacheKey)
 
       // Find bank info to set category/topic/subtopic on the slot
-      const bank = banks.find(b => b.id === step.bankId)
+      const bank = step.bankId ? banks.find(b => b.id === step.bankId) : null
       updateSlot(slotNumber, {
         category: bank?.category || 'My Own Questions',
         topic: bank?.topic || null,
@@ -1078,7 +1079,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                             ?
                           </button>
                           {showMathHelp === slot.slotNumber && (
-                            <div className="absolute right-0 top-6 z-50 w-64 rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+                            <div className="absolute right-0 top-6 z-50 w-80 rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
                               <p className="mb-1 text-xs font-semibold text-gray-700">Math Notation Guide</p>
                               <p className="mb-2 text-xs text-gray-500">Wrap equations in <code className="rounded bg-gray-100 px-1">$...$</code></p>
                               <div className="space-y-1.5">
@@ -1098,6 +1099,18 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                                 ))}
                               </div>
                               <p className="mt-2 text-xs text-gray-500">Example: <code className="rounded bg-gray-100 px-1">{'Simplify $\\frac{2x}{4}$'}</code></p>
+                              <hr className="my-2 border-gray-100" />
+                              <p className="mb-1 text-xs font-semibold text-gray-700">Currency ($ signs)</p>
+                              <p className="mb-1.5 text-xs text-gray-500">
+                                Use <code className="rounded bg-gray-100 px-1">\$</code> (backslash + $) for a dollar amount — this stops it being read as math.
+                              </p>
+                              <div className="rounded bg-gray-50 px-2 py-1.5 space-y-1">
+                                <p className="text-xs text-gray-500">Type: <code className="rounded bg-gray-100 px-1">{'Jake has \\$5 and spends \\$3'}</code></p>
+                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                  <span>Shows:</span>
+                                  <MathText text={'Jake has \\$5 and spends \\$3'} className="text-xs text-gray-800" />
+                                </div>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1269,7 +1282,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                       </div>
 
                       {/* Strand selection */}
-                      {!saveStepState[slot.slotNumber]?.category && (
+                      {!saveStepState[slot.slotNumber]?.category && !saveStepState[slot.slotNumber]?.skipped && (
                         <>
                           <p className="mb-1.5 text-xs text-gray-500">Choose a strand:</p>
                           <div className="grid grid-cols-2 gap-1.5">
@@ -1286,6 +1299,15 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                               )
                             })}
                           </div>
+                          <button
+                            onClick={() => setSaveStepState(prev => ({
+                              ...prev,
+                              [slot.slotNumber]: { category: '', topic: '', bankId: '', isPublic: false, skipped: true }
+                            }))}
+                            className="mt-2 w-full rounded-lg border border-dashed border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                          >
+                            Skip — save without categorising
+                          </button>
                         </>
                       )}
 
@@ -1333,7 +1355,24 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                         </>
                       )}
 
-                      {/* Confirm + public toggle */}
+                      {/* Skipped categorisation — confirm without public toggle */}
+                      {saveStepState[slot.slotNumber]?.skipped && (
+                        <>
+                          <div className="mb-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-600">
+                            Will be saved to <span className="font-semibold text-gray-800">My Own Questions</span> without a category.
+                            <span className="ml-1 text-gray-400">(You can categorise it later by editing.)</span>
+                          </div>
+                          <button
+                            onClick={() => handleSaveAndUseQuestion(slot.slotNumber)}
+                            disabled={savingCustom === slot.slotNumber}
+                            className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {savingCustom === slot.slotNumber ? 'Saving…' : '✓ Save & Use Question'}
+                          </button>
+                        </>
+                      )}
+
+                      {/* Confirm + public toggle — only when a bank has been chosen */}
                       {saveStepState[slot.slotNumber]?.bankId && (
                         <>
                           <div className="mb-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
