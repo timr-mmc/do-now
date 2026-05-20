@@ -992,7 +992,7 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
               return (
                 <div
                   key={slot.slotNumber}
-                  className={`flex flex-col overflow-hidden rounded-xl bg-white shadow-md transition-all h-[400px] lg:h-[calc(50vh-6rem)] xl:h-[350px] ${
+                  className={`flex flex-col overflow-hidden rounded-xl bg-white shadow-md transition-all h-[520px] lg:h-[calc(50vh+2rem)] xl:h-[500px] ${
                     slot.question ? 'ring-2 ring-green-400' : ''
                   }`}
                 >
