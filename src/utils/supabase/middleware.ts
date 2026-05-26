@@ -48,5 +48,7 @@ export async function updateSession(request: NextRequest) {
   // If this is not done, you may be causing the browser and server to go out
   // of sync and terminate the user's session prematurely.
 
-  return supabaseResponse
+  // Return both the response (with refreshed cookies) and the user so that
+  // callers don't need to make a second getUser() round-trip.
+  return { response: supabaseResponse, user }
 }

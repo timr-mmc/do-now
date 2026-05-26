@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MathText from '@/components/MathText'
-import GeometryDiagram, { DiagramData } from '@/components/GeometryDiagram'
+import type { DiagramData } from '@/components/GeometryDiagram'
+
+const GeometryDiagram = dynamic(() => import('@/components/GeometryDiagram'), { ssr: false })
 
 type QuestionBank = {
   id: string
@@ -49,7 +52,6 @@ const CATEGORY_STYLES: Record<string, { bg: string; border: string; text: string
 }
 
 export default function CreateDoNowPage({ params }: { params: Promise<{ profileId: string }> | { profileId: string } }) {
-  console.log('🚀 CreateDoNowPage component loaded')
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -183,19 +185,15 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
   async function loadQuestionsForBank(bankId: string): Promise<Question[]> {
     // Build cache key that includes source selection to prevent mixing filtered results
     const cacheKey = `${bankId}_${questionSource}`
-    
-    console.log('🔍 DEBUG - Loading questions for bank', bankId, 'with questionSource:', questionSource, 'cacheKey:', cacheKey)
-    
+
     // 1. Check in-memory cache first
     if (allQuestions[cacheKey]) {
-      console.log('✅ Questions for bank', bankId, 'loaded from memory cache (source:', questionSource, ')')
       return allQuestions[cacheKey]
     }
 
     // 2. Check localStorage cache (with source-specific key)
     const cachedData = getCachedQuestions(cacheKey)
     if (cachedData) {
-      console.log('✅ Questions for bank', bankId, 'loaded from localStorage cache (source:', questionSource, ')')
       setAllQuestions(prev => ({ ...prev, [cacheKey]: cachedData }))
       return cachedData
     }
@@ -212,27 +210,11 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
         .eq('bank_id', bankId)
 
       if (error) {
-        console.error('❌ Error loading questions for bank', bankId, ':', error)
+        console.error('Error loading questions for bank', bankId, ':', error)
         return []
       }
-      
-      console.log('🔍 DEBUG - Supabase returned', data?.length || 0, 'questions for bank', bankId)
 
       if (data) {
-        // DEBUG: Log first question to see what data we're getting
-        if (data.length > 0) {
-          console.log('🔍 DEBUG - First question data:', {
-            id: data[0].id,
-            is_custom: data[0].is_custom,
-            is_public: data[0].is_public,
-            created_by: data[0].created_by,
-            question_preview: data[0].question_text?.substring(0, 30)
-          })
-          console.log('🔍 DEBUG - Filter settings:', {
-            userId: userId,
-            questionSource: questionSource
-          })
-        }
         
         // Client-side filtering based on source selection
         let filteredData = data.filter((q: any) => {
@@ -250,8 +232,6 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
           }
           return false
         })
-        
-        console.log('✅ Loaded', filteredData.length, '/', data.length, 'questions for bank', bankId, '(source:', questionSource, ')')
         
         // Update in-memory cache
         setAllQuestions(prev => ({ ...prev, [cacheKey]: filteredData }))
@@ -282,7 +262,6 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
     if (banksError) console.error('Error loading banks:', banksError)
 
     if (banksData) {
-      console.log('✅ Loaded', banksData.length, 'question banks (questions will load on-demand)')
       setBanks(banksData)
 
       // Load existing session if editing (after banks are available)
@@ -1140,15 +1119,15 @@ export default function CreateDoNowPage({ params }: { params: Promise<{ profileI
                       {/* Answer input */}
                       <div className="mb-2">
                         <label className="mb-1 block text-xs font-medium text-gray-600">Answer:</label>
-                        <input
-                          type="text"
+                        <textarea
                           value={writeOwnData[slot.slotNumber]?.answer || ''}
                           onChange={(e) => setWriteOwnData(prev => ({
                             ...prev,
                             [slot.slotNumber]: { ...prev[slot.slotNumber], text: prev[slot.slotNumber]?.text || '', answer: e.target.value, difficulty: prev[slot.slotNumber]?.difficulty ?? 3, tags: prev[slot.slotNumber]?.tags ?? [] }
                           }))}
                           placeholder="e.g. $\frac{x}{2}$"
-                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+                          className="w-full resize-none rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+                          rows={3}
                         />
                         {writeOwnData[slot.slotNumber]?.answer && (
                           <div className="mt-1 rounded bg-green-50 px-2 py-1">

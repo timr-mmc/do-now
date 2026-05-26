@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
-import DiagramBuilder from '@/components/DiagramBuilder'
 import { validateDiagram } from '@/utils/diagramValidator'
 import type { DiagramData } from '@/components/GeometryDiagram'
+
+const DiagramBuilder = dynamic(() => import('@/components/DiagramBuilder'), { ssr: false })
 
 type QuestionBank = {
   id: string

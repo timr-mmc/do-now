@@ -65,26 +65,34 @@ export default function AllSessionsPage({
         .order('created_at', { ascending: false });
 
       if (sessionsData) {
-        // Get average accuracy for each session
-        const sessionsWithStats = await Promise.all(
-          sessionsData.map(async (session) => {
-            const { data: sessionQuestions } = await supabase
+        // Fetch all session_questions for every session in one query, then
+        // aggregate in JS — avoids N+1 round-trips (one per session).
+        const sessionIds = sessionsData.map((s: any) => s.id)
+        const { data: allSessionQuestions } = sessionIds.length > 0
+          ? await supabase
               .from('session_questions')
-              .select('proportion_correct')
-              .eq('session_id', session.id)
-              .not('proportion_correct', 'is', null);
+              .select('session_id, proportion_correct')
+              .in('session_id', sessionIds)
+              .not('proportion_correct', 'is', null)
+          : { data: [] }
 
-            const avgAccuracy = sessionQuestions && sessionQuestions.length > 0
-              ? sessionQuestions.reduce((sum, q) => sum + (q.proportion_correct || 0), 0) / sessionQuestions.length
-              : null;
+        // Build a per-session stats map
+        const statsBySession = new Map<string, { sum: number; count: number }>()
+        for (const q of allSessionQuestions ?? []) {
+          const entry = statsBySession.get(q.session_id) ?? { sum: 0, count: 0 }
+          entry.sum += q.proportion_correct as number
+          entry.count += 1
+          statsBySession.set(q.session_id, entry)
+        }
 
-            return {
-              ...session,
-              avg_accuracy: avgAccuracy,
-              questions_count: sessionQuestions?.length || 0,
-            };
-          })
-        );
+        const sessionsWithStats = sessionsData.map((session: any) => {
+          const stats = statsBySession.get(session.id)
+          return {
+            ...session,
+            avg_accuracy: stats ? stats.sum / stats.count : null,
+            questions_count: stats?.count ?? 0,
+          }
+        })
 
         setSessionHistory(sessionsWithStats);
       }

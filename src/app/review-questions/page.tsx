@@ -512,7 +512,7 @@ export default function ReviewQuestionsPage() {
           </div>
         )}
 
-        {/* Questions */}}
+        {/* Questions */}
         <div className="bg-white shadow-sm rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium text-gray-900">Questions</h2>

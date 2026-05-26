@@ -2,10 +2,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import MathText from '@/components/MathText'
-import GeometryDiagram, { DiagramData } from '@/components/GeometryDiagram'
+import type { DiagramData } from '@/components/GeometryDiagram'
+
+const GeometryDiagram = dynamic(() => import('@/components/GeometryDiagram'), { ssr: false })
 
 type SessionQuestion = {
   id: string

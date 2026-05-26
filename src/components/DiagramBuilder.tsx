@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import GeometryDiagram, { DiagramData, DiagramType, DiagramDimensions, DiagramLabel } from './GeometryDiagram';
 import { validateDiagram } from '@/utils/diagramValidator';
 
@@ -247,6 +247,7 @@ export default function DiagramBuilder({ initialData, onChange }: DiagramBuilder
   );
   const [fillColor, setFillColor] = useState(initialData?.style?.fill ?? '');
   const [strokeColor, setStrokeColor] = useState(initialData?.style?.stroke ?? '#1f2937');
+  const isMounted = useRef(false);
 
   // Build the DiagramData from current state
   const buildDiagramData = useCallback((): DiagramData => {
@@ -290,8 +291,13 @@ export default function DiagramBuilder({ initialData, onChange }: DiagramBuilder
   const diagramData = buildDiagramData();
   const validation = validateDiagram(diagramData);
 
-  // Notify parent on change
+  // Notify parent on change — skip the initial mount fire to avoid
+  // overwriting a null diagram_data with a default empty shape.
   useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
     onChange?.(diagramData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType, dimensions, labels, theoremType, fillColor, strokeColor]);
