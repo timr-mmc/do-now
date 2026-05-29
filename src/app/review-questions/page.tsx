@@ -271,6 +271,16 @@ export default function ReviewQuestionsPage() {
     fetchFlagged()
   }, [viewMode, supabase])
 
+  async function handleUnflag(questionId: string) {
+    const { error } = await supabase
+      .from('flagged_questions')
+      .delete()
+      .eq('question_id', questionId)
+    if (!error) {
+      setQuestions(prev => prev.filter(q => q.id !== questionId))
+    }
+  }
+
   function startEdit(q: Question) {
     setEditingId(q.id)
     setEditDraft({ question_text: q.question_text, answer: q.answer, hint: q.hint ?? '', difficulty: q.difficulty, diagram_data: q.diagram_data ?? null, editDiagram: false })
@@ -631,6 +641,18 @@ export default function ReviewQuestionsPage() {
                                 title={q.is_public ? 'Click to make private' : 'Click to make public'}
                               >
                                 {q.is_public ? '🌐 Make private' : '🔒 Make public'}
+                              </button>
+                            )}
+                            {viewMode === 'flagged' && (
+                              <button
+                                onClick={() => handleUnflag(q.id)}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-green-700 shadow-sm ring-1 ring-inset ring-green-300 hover:bg-green-50 transition-colors"
+                                title="Clear all flags for this question"
+                              >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Unflag
                               </button>
                             )}
                             <button
