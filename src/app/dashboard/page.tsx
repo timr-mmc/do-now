@@ -1,30 +1,21 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
-import DashboardClient from './DashboardClient'
+'use client'
 
-// Server Component — fetches user + profiles on the server so the page
-// renders with data immediately (no blank flash while waiting for JS).
-export default async function DashboardPage() {
-  const supabase = await createClient()
+import { useState, useEffect } from 'react'
+import { createClient } from '@/utils/supabase/client'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import OnboardingTooltip from '@/components/OnboardingTooltip'
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+export default function DashboardPage() {
+  const router = useRouter()
+  const supabase = createClient()
+  const [profiles, setProfiles] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userEmail, setUserEmail] = useState('')
+  const [userId, setUserId] = useState('')
+  const [showDoNowHint, setShowDoNowHint] = useState(false)
 
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .is('archived_at', null)
-    .order('created_at', { ascending: false })
-
-  return (
-    <DashboardClient
-      initialProfiles={profiles ?? []}
-      userEmail={user.email ?? ''}
-      userId={user.id}
-    />
-  )
-}
+  useEffect(() => {
 
     async function loadData() {
       const { data: { user } } = await supabase.auth.getUser()
