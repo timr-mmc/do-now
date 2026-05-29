@@ -453,13 +453,13 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
 
       {/* Main Content */}
       <div 
-        className="flex-1 overflow-auto bg-white px-8 py-4 transition-all duration-300"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white px-8 py-4 transition-all duration-300"
         style={{ marginLeft: sidebarOpen ? 'var(--sidebar-width)' : '0' }}
       >
-        <div className="mx-auto w-full px-4">
+        <div className="flex h-full min-h-0 w-full flex-col px-4">
           {/* Title and Fullscreen Button */}
-          <div className="mb-4 flex items-center justify-center gap-4">
-            <h1 className="text-7xl font-bold text-gray-900">Do Now</h1>
+          <div className="mb-2 flex shrink-0 items-center justify-center gap-4">
+            <h1 className="font-bold text-gray-900" style={{ fontSize: 'clamp(1.75rem, 4vw, 4.5rem)' }}>Do Now</h1>
             <button
               onClick={enterFullscreen}
               className="rounded-lg bg-gray-100 p-2 text-gray-500 opacity-50 transition-all hover:bg-gray-200 hover:opacity-100"
@@ -472,28 +472,29 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
           </div>
 
           {/* Questions Grid - Dynamic layout based on count */}
-          <div className={`grid gap-8 ${
-            focusedQuestionId 
-              ? 'grid-cols-1' 
-              : questions.length === 1
-              ? 'grid-cols-1'
-              : questions.length === 2
-              ? 'grid-cols-2'
-              : questions.length === 3
-              ? 'grid-cols-3'
-              : questions.length === 4
-              ? 'grid-cols-2'
-              : questions.length >= 5
-              ? 'grid-cols-3'
-              : 'grid-cols-3'
-          }`}>
+          <div
+            className={`grid min-h-0 flex-1 gap-4 ${
+              focusedQuestionId
+                ? 'grid-cols-1'
+                : questions.length === 1
+                ? 'grid-cols-1'
+                : questions.length === 2
+                ? 'grid-cols-2'
+                : questions.length === 3
+                ? 'grid-cols-3'
+                : questions.length === 4
+                ? 'grid-cols-2'
+                : 'grid-cols-3'
+            }`}
+            style={{ gridAutoRows: '1fr' }}
+          >
             {questions
               .filter(sq => !focusedQuestionId || sq.id === focusedQuestionId)
               .map((sq, index) => (
               <div
                 key={sq.id}
-                className={`group relative flex flex-col rounded-2xl border-4 border-gray-200 bg-gray-50 shadow-xl transition-all ${
-                  focusedQuestionId === sq.id ? 'min-h-[600px] ring-4 ring-indigo-500' : 'min-h-[450px]'
+                className={`group relative flex h-full flex-col rounded-2xl border-4 border-gray-200 bg-gray-50 shadow-xl transition-all ${
+                  focusedQuestionId === sq.id ? 'ring-4 ring-indigo-500' : ''
                 }`}
               >
                 {/* Question Number - Top Left - Sequential display */}
@@ -553,9 +554,11 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
                 </div>
 
                 {/* Question Content - Left aligned, vertically centered */}
-                <div className="flex flex-1 items-center p-10 pt-16">
+                <div className="flex min-h-0 flex-1 items-center overflow-y-auto px-6 pb-4 pt-16">
                   <div className="w-full">
-                    <MathText text={sq.questions.question_text} className="text-left text-3xl font-semibold leading-tight text-gray-900" />
+                    <div style={{ fontSize: 'clamp(0.875rem, 2.2vw, 1.875rem)' }}>
+                      <MathText text={sq.questions.question_text} className="text-left font-semibold leading-tight text-gray-900" />
+                    </div>
                     
                     {sq.questions.diagram_data && (
                       <GeometryDiagram data={sq.questions.diagram_data} className="my-6" />
@@ -563,9 +566,11 @@ export default function DisplayPage({ params }: { params: Promise<{ sessionId: s
                     
                     {/* Answer Section */}
                     {showAnswers && (
-                      <div className="mt-8 rounded-xl border-4 border-green-500 bg-green-50 p-6">
-                        <div className="text-xl font-bold text-green-700">Answer:</div>
-                        <MathText text={sq.questions.answer} className="mt-2 text-3xl font-bold text-green-900" />
+                      <div className="mt-4 rounded-xl border-4 border-green-500 bg-green-50 p-4">
+                        <div className="font-bold text-green-700" style={{ fontSize: 'clamp(0.75rem, 1.5vw, 1.25rem)' }}>Answer:</div>
+                        <div style={{ fontSize: 'clamp(0.875rem, 2.2vw, 1.875rem)' }}>
+                          <MathText text={sq.questions.answer} className="mt-1 font-bold text-green-900" />
+                        </div>
                       </div>
                     )}
 
