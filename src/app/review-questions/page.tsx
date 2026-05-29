@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import MathText from '@/components/MathText'
 import { createClient } from '@/utils/supabase/client'
 import type { DiagramData } from '@/components/GeometryDiagram'
@@ -54,6 +55,7 @@ function getCategoryStyle(category: string) {
 
 export default function ReviewQuestionsPage() {
   const supabase = createClient()
+  const router = useRouter()
 
   const [viewMode, setViewMode] = useState<'browse' | 'flagged' | 'user-questions'>('browse')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -79,9 +81,13 @@ export default function ReviewQuestionsPage() {
   useEffect(() => {
     async function fetchCategories() {
       setLoadingFilters(true)
-      // Check admin status
+      // Check admin status — only tim.rout@gmail.com may access this page
       const { data: { user } } = await supabase.auth.getUser()
-      if (user?.email === 'tim.rout@gmail.com') setIsAdmin(true)
+      if (user?.email !== 'tim.rout@gmail.com') {
+        router.replace('/dashboard')
+        return
+      }
+      setIsAdmin(true)
 
       const { data } = await supabase
         .from('question_banks')

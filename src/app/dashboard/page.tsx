@@ -145,12 +145,14 @@ export default function DashboardPage() {
                 ✏️ Build Questions
               </Link>
               */}
+              {userEmail === 'tim.rout@gmail.com' && (
               <Link
                 href="/review-questions"
                 className="rounded-md bg-purple-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500"
               >
                 🔍 Review Questions
               </Link>
+              )}
               <Link
                 href="/settings"
                 className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
