@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import Link from 'next/link'
 
-export default function SignupPage() {
+export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error: errorMessage } = await searchParams
   async function signup(formData: FormData) {
     'use server'
 
@@ -46,6 +47,11 @@ export default function SignupPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
+          {errorMessage && (
+            <div className="mb-6 rounded-md bg-red-50 p-4">
+              <p className="text-sm text-red-700">{decodeURIComponent(errorMessage)}</p>
+            </div>
+          )}
           <form className="space-y-6" action={signup}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900">

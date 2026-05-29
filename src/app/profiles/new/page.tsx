@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import Link from 'next/link'
 
-export default function NewProfilePage() {
+export default async function NewProfilePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error: errorMessage } = await searchParams
   async function createProfile(formData: FormData) {
     'use server'
 
@@ -90,6 +91,12 @@ export default function NewProfilePage() {
               />
             </div>
           </div>
+
+          {errorMessage && (
+            <div className="rounded-md bg-red-50 p-4">
+              <p className="text-sm text-red-700">{decodeURIComponent(errorMessage)}</p>
+            </div>
+          )}
 
           <div className="flex gap-3">
             <Link
